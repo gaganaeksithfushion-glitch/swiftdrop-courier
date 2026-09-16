@@ -36,7 +36,6 @@ class _RouteListScreenState extends State<RouteListScreen> {
         title: const Text('Route Map & Deliveries'),
       ),
       body: deliveries.isEmpty
-          .isEmpty // Fixed check representation
           ? const Center(child: Text('අදට නියමිත බෙදාහැරීම් අවසන්ය.'))
           : ListView.builder(
               padding: const EdgeInsets.all(16.0),
