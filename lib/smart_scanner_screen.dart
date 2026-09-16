@@ -13,14 +13,12 @@ class SmartScannerScreen extends StatefulWidget {
 }
 
 class _SmartScannerScreenState extends State<SmartScannerScreen> {
-  // කියවාගත් පාර්සල් ලැයිස්තුව තබාගන්නා තැන
   List<Map<String, dynamic>> _scannedItems = [];
   bool _isLoading = false;
   
   // TODO: Get a free key from https://aistudio.google.com/ and paste it here
   static const String _apiKey = 'YOUR_GEMINI_API_KEY_HERE';
 
-  // ෆොටෝ එක ගෙන AI එකට යැවීම (Mass Scanner)
   Future<void> _takePhotoAndScan() async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.camera);
@@ -29,14 +27,13 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
 
     setState(() {
       _isLoading = true;
-      _scannedItems.clear(); // අලුත් ෆොටෝ එකක් ගහනකොට පරණ ලිස්ට් එක මකනවා
+      _scannedItems.clear();
     });
 
     try {
       final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: _apiKey);
       final imageBytes = await File(image.path).readAsBytes();
       
-      // AI එකට දෙන අලුත් උපදෙස (Multiple Items & New Fields)
       final prompt = TextPart('''
         Analyze this image of a delivery sheet, waybill, or printed list. 
         Extract the details of ALL parcels found in the image. 
@@ -52,8 +49,6 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
       
       if (response.text != null) {
         String rawJson = response.text!.replaceAll('```json', '').replaceAll('```', '').trim();
-        
-        // JSON Array එකක් ලැයිස්තුවක් (List) බවට පත් කිරීම
         final List<dynamic> extractedData = jsonDecode(rawJson);
         
         setState(() {
@@ -71,12 +66,10 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
     }
   }
 
-  // Preview ලිස්ට් එකේ තියෙන සියල්ල Database එකට සේව් කිරීම
   Future<void> _saveAllData() async {
     if (_scannedItems.isEmpty) return;
 
     for (var item in _scannedItems) {
-      // AI එකෙන් ආපු දත්ත Database එකට ගැලපෙන විදියට සකස් කිරීම
       Map<String, dynamic> deliveryData = {
         'billNumber': item['billNumber']?.toString() ?? '',
         'itemName': item['itemName']?.toString() ?? '',
@@ -85,34 +78,103 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
         'phone': item['phone']?.toString() ?? '',
         'codAmount': item['codAmount']?.toString() ?? '0',
       };
-      
       await DatabaseHelper.instance.insertDelivery(deliveryData);
     }
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('පාර්සල් ${_scannedItems.length} ක් සාර්ථකව Morning Call List එකට එකතු විය!'),
-        backgroundColor: Colors.green,
-      ),
+      SnackBar(content: Text('පාර්සල් ${_scannedItems.length} ක් Morning Call List එකට එකතු විය!'), backgroundColor: Colors.green),
     );
 
     setState(() {
-      _scannedItems.clear(); // සේව් කළාට පසු ලිස්ට් එක හිස් කිරීම
+      _scannedItems.clear();
     });
   }
 
-  // ලිස්ට් එකෙන් වැරදි එකක් අතින් මකා දැමීම (Preview එකේදී)
   void _removeItem(int index) {
     setState(() {
       _scannedItems.removeAt(index);
     });
   }
 
+  // අතින් විස්තර ඇතුලත් කිරීම සඳහා Bottom Sheet එක (Manual Entry)
+  void _showManualEntrySheet() {
+    final TextEditingController billCtrl = TextEditingController();
+    final TextEditingController itemCtrl = TextEditingController();
+    final TextEditingController nameCtrl = TextEditingController();
+    final TextEditingController addressCtrl = TextEditingController();
+    final TextEditingController phoneCtrl = TextEditingController();
+    final TextEditingController codCtrl = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true, // කීබෝඩ් එක එද්දී උඩට එන්න
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+            left: 16, right: 16, top: 24,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('අතින් ඇතුලත් කරන්න (Manual Entry)', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 16),
+                TextField(controller: billCtrl, decoration: const InputDecoration(labelText: 'Bill Number', border: OutlineInputBorder())),
+                const SizedBox(height: 12),
+                TextField(controller: itemCtrl, decoration: const InputDecoration(labelText: 'Item Name', border: OutlineInputBorder())),
+                const SizedBox(height: 12),
+                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Customer Name *', border: OutlineInputBorder())),
+                const SizedBox(height: 12),
+                TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'Phone Number *', border: OutlineInputBorder()), keyboardType: TextInputType.phone),
+                const SizedBox(height: 12),
+                TextField(controller: addressCtrl, decoration: const InputDecoration(labelText: 'Address', border: OutlineInputBorder())),
+                const SizedBox(height: 12),
+                TextField(controller: codCtrl, decoration: const InputDecoration(labelText: 'COD Amount', border: OutlineInputBorder()), keyboardType: TextInputType.number),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    if (nameCtrl.text.isEmpty || phoneCtrl.text.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('නම සහ දුරකථන අංකය අනිවාර්යයි!')));
+                      return;
+                    }
+                    Map<String, dynamic> deliveryData = {
+                      'billNumber': billCtrl.text,
+                      'itemName': itemCtrl.text,
+                      'customerName': nameCtrl.text,
+                      'address': addressCtrl.text,
+                      'phone': phoneCtrl.text,
+                      'codAmount': codCtrl.text.isEmpty ? '0' : codCtrl.text,
+                    };
+                    await DatabaseHelper.instance.insertDelivery(deliveryData);
+                    if (context.mounted) {
+                      Navigator.pop(context); // Sheet එක වසන්න
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('පාර්සලය අතින් එකතු කරන ලදී!'), backgroundColor: Colors.green));
+                    }
+                  },
+                  child: const Text('Save Package'),
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Smart Mass Scanner')),
+      appBar: AppBar(title: const Text('Smart Scanner & Entry')),
       body: Column(
         children: [
           Padding(
@@ -137,9 +199,8 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
           else if (_scannedItems.isNotEmpty) ...[
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: Text('පාර්සල් ${_scannedItems.length} ක් හඳුනාගන්නා ලදී. කරුණාකර පරීක්ෂා කරන්න.', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+              child: Text('පාර්සල් ${_scannedItems.length} ක් හඳුනාගන්නා ලදී.', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
             ),
-            // AI එකෙන් කියවපු දත්ත ලැයිස්තුවක් ලෙස පෙන්වීම
             Expanded(
               child: ListView.builder(
                 itemCount: _scannedItems.length,
@@ -153,15 +214,13 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
                       isThreeLine: true,
                       trailing: IconButton(
                         icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () => _removeItem(index), // වැරදියට කියවපු එකක් තිබුණොත් අයින් කරන්න
+                        onPressed: () => _removeItem(index),
                       ),
                     ),
                   );
                 },
               ),
             ),
-            
-            // සියල්ල සේව් කිරීමේ බොත්තම
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: ElevatedButton.icon(
@@ -184,6 +243,14 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
             )
           ]
         ],
+      ),
+      // අතින් දත්ත ඇතුලත් කිරීමට ඇති Floating Action Button එක
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showManualEntrySheet,
+        icon: const Icon(Icons.edit_document),
+        label: const Text('Manual Entry'),
+        backgroundColor: Theme.of(context).colorScheme.secondary,
+        foregroundColor: Colors.white,
       ),
     );
   }
