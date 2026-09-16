@@ -13,4 +13,4 @@ workflows:
           flutter pub get
           flutter build appbundle --release
     artifacts:
-      - build/app/outputs/flutter-apk/app-release.apk
+      - build/app/outputs/**/*.apk
