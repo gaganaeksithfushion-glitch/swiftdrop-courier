@@ -12,5 +12,7 @@ workflows:
           flutter create . --platforms=android
           flutter pub get
           flutter build appbundle --release
+          flutter build apk --release
     artifacts:
+      - build/app/outputs/**/*.aab
       - build/app/outputs/**/*.apk
