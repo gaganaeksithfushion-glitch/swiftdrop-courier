@@ -6,13 +6,11 @@ workflows:
     environment:
       flutter: stable
     scripts:
-      - name: Install dependencies
-        script: flutter pub get
-      - name: Build App Bundle with Force Clean
+      - name: Create Android Native Files and Build
         script: |
-          cd android
-          ./gradlew clean
-          cd ..
+          # Flutter project එකට නැතිවුණු android ෆෝල්ඩරය නැවත සාදා ගැනීම
+          flutter create . --platforms=android
+          flutter pub get
           flutter build appbundle --release
     artifacts:
       - build/app/outputs/bundle/release/app-release.aab
