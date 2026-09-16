@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
+import 'database_helper.dart'; // Database එක මෙතනට සම්බන්ධ කර ඇත
 
 class SmartScannerScreen extends StatefulWidget {
   const SmartScannerScreen({super.key});
@@ -12,7 +13,6 @@ class SmartScannerScreen extends StatefulWidget {
 }
 
 class _SmartScannerScreenState extends State<SmartScannerScreen> {
-  // Controllers to manage the text inside the input fields
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
@@ -27,18 +27,16 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.camera);
 
-    if (image == null) return; // User canceled the camera
+    if (image == null) return;
 
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // Using gemini-1.5-flash as it is lightning fast for vision tasks
       final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: _apiKey);
       final imageBytes = await File(image.path).readAsBytes();
       
-      // We strictly instruct the AI to return JSON so our app doesn't crash trying to read it
       final prompt = TextPart('''
         Analyze this handwritten delivery sheet. 
         Extract the customer details and return ONLY a valid JSON object with exact keys:
@@ -50,7 +48,6 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
       final response = await model.generateContent([Content.multi([prompt, ...imageParts])]);
       
       if (response.text != null) {
-        // Clean up the response in case the AI wraps it in markdown (```json ... ```)
         String rawJson = response.text!.replaceAll('```json', '').replaceAll('```', '').trim();
         final Map<String, dynamic> data = jsonDecode(rawJson);
         
@@ -70,6 +67,40 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  // අලුතින් එකතු කළ දත්ත සේව් කිරීමේ කොටස
+  Future<void> _saveData() async {
+    if (_nameController.text.isEmpty || _phoneController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('කරුණාකර පාරිභෝගිකයාගේ නම සහ දුරකථන අංකය ඇතුලත් කරන්න.')),
+      );
+      return;
+    }
+
+    Map<String, dynamic> deliveryData = {
+      'customerName': _nameController.text,
+      'address': _addressController.text,
+      'phone': _phoneController.text,
+      'codAmount': _codController.text,
+    };
+
+    // Database එකට යැවීම
+    await DatabaseHelper.instance.insertDelivery(deliveryData);
+
+    // සාර්ථක බව දැනුම් දීම
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('දත්ත සාර්ථකව සේව් විය!'),
+        backgroundColor: Colors.green,
+      ),
+    );
+
+    // ඊළඟ දත්තය ඇතුලත් කරන්න ලේසි වෙන්න කොටු ටික හිස් කිරීම
+    _nameController.clear();
+    _addressController.clear();
+    _phoneController.clear();
+    _codController.clear();
   }
 
   @override
@@ -92,7 +123,6 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
             ),
             const SizedBox(height: 24),
             
-            // Show a loading spinner while the AI is thinking
             if (_isLoading) 
               const Center(child: CircularProgressIndicator())
             else ...[
@@ -119,9 +149,8 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: () {
-                  // Database save logic will go here
-                },
+                // බොත්තම එබූ විට සේව් වීමේ කේතය ක්‍රියාත්මක වේ
+                onPressed: _saveData,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   backgroundColor: Theme.of(context).colorScheme.primary,
