@@ -14,33 +14,50 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
     {'name': 'Kamal Silva', 'phone': '+94719876543', 'address': 'Galle Road, Matara'},
   ];
 
+  // දුරකථන ඇමතුමක් ලබා දීම (Dialer)
   Future<void> _makePhoneCall(String phoneNumber) async {
     final Uri launchUri = Uri(scheme: 'tel', path: phoneNumber);
     if (await canLaunchUrl(launchUri)) {
       await launchUrl(launchUri);
+    } else {
+      debugPrint('Could not launch phone call to $phoneNumber');
     }
   }
 
+  // WhatsApp චැට් වෙත කෙළින්ම යොමු කිරීම
   Future<void> _openWhatsApp(String phone, String name) async {
-    final formattedPhone = phone.replaceAll('+', '');
+    final formattedPhone = phone.replaceAll('+', '').replaceAll(' ', '');
     final message = Uri.encodeComponent('ഹലോ $name, ඔබේ පාර්සලය සම්බන්ධයෙනි.');
     final Uri whatsappUri = Uri.parse('https://wa.me/$formattedPhone?text=$message');
+    
     if (await canLaunchUrl(whatsappUri)) {
-      await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+      await launchUrl(
+        whatsappUri, 
+        mode: LaunchMode.externalApplication, // බාහිරව WhatsApp ඇප් එක විවෘත කිරීමට මෙය අත්‍යවශ්‍යයි
+      );
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('WhatsApp නොමැත හෝ විවෘත කරගත නොහැක.'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
   void _updateStatus(int index, String status) {
     setState(() => pendingCalls.removeAt(index));
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('පාර්සලය $status ලෙස සටහන් විය!'), backgroundColor: status == 'Confirmed' ? Colors.green : Colors.red),
+      SnackBar(
+        content: Text('පාර්සලය $status ලෙස සටහන් විය!'),
+        backgroundColor: status == 'Confirmed' ? Colors.green : Colors.red,
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Pending Calls')),
+      appBar: AppBar(title: const Text('Pending Calls & WhatsApp')),
       body: pendingCalls.isEmpty
           ? const Center(child: Text('Pending calls කිසිවක් නැත.'))
           : ListView.builder(
@@ -70,7 +87,7 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
                             IconButton(
                               icon: const Icon(Icons.chat, color: Colors.green),
                               onPressed: () => _openWhatsApp(call['phone'], call['name']),
-                              tooltip: 'WhatsApp',
+                              tooltip: 'WhatsApp Message',
                             ),
                             const Spacer(),
                             ElevatedButton(
