@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'database_helper.dart';
 
@@ -12,6 +13,12 @@ class RouteListScreen extends StatefulWidget {
 class _RouteListScreenState extends State<RouteListScreen> {
   List<Map<String, dynamic>> _confirmedDeliveries = [];
   bool _isLoading = true;
+  
+  // සිතියම පාලනය කරන Controller එක
+  GoogleMapController? _mapController;
+  
+  // ආරම්භක ස්ථානය (දැනට කොළඹ ලෙස දී ඇත, පසුව GPS මගින් ගනී)
+  final LatLng _initialPosition = const LatLng(6.9271, 79.8612);
 
   @override
   void initState() {
@@ -27,109 +34,125 @@ class _RouteListScreenState extends State<RouteListScreen> {
     });
   }
 
-  // 1. Google Maps විවෘත කිරීම
-  Future<void> _openGoogleMaps(String address) async {
-    final Uri googleMapsUrl = Uri.parse("https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(address)}");
-    if (await canLaunchUrl(googleMapsUrl)) {
-      await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Google Maps විවෘත කළ නොහැක.')));
-    }
-  }
-
-  // 2. Dialer එක විවෘත කිරීම (ගේට්ටුව ගාවදි කෝල් කරන්න)
   Future<void> _makePhoneCall(String phoneNumber) async {
     final Uri launchUri = Uri(scheme: 'tel', path: phoneNumber);
     if (await canLaunchUrl(launchUri)) {
       await launchUrl(launchUri);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('දුරකථන ඇමතුම ලබා ගත නොහැක.')));
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('දුරකථන ඇමතුම ලබා ගත නොහැක.')));
     }
   }
 
-  // 3. Delivered ලෙස සටහන් කිරීම
   Future<void> _markAsDelivered(int id) async {
-    // Attempts ගණන වෙනස් නොකර Status එක පමණක් වෙනස් කරයි
     await DatabaseHelper.instance.updateDeliveryStatus(id, 'delivered', 0);
-    _loadConfirmedDeliveries(); // ලිස්ට් එක Refresh කිරීම
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('සාර්ථකව Delivered ලෙස සටහන් විය!', backgroundColor: Colors.green)));
+    _loadConfirmedDeliveries(); // ලිස්ට් එක Refresh කර ඊළඟ පාර්සලය පෙන්වයි
+    if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('සාර්ථකව Delivered ලෙස සටහන් විය!', backgroundColor: Colors.green)));
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (_confirmedDeliveries.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Live Route')),
+        body: const Center(child: Text('බෙදා හැරීමට පාර්සල් නොමැත.', style: TextStyle(fontSize: 18))),
+      );
+    }
+
+    // ලැයිස්තුවේ ඇති පළමු පාර්සලය (දැන් යා යුතු තැන)
+    final currentTarget = _confirmedDeliveries.first;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Route List (Confirmed)')),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _confirmedDeliveries.isEmpty
-              ? const Center(child: Text('බෙදා හැරීමට පාර්සල් නොමැත.', style: TextStyle(fontSize: 16)))
-              : ListView.builder(
-                  itemCount: _confirmedDeliveries.length,
-                  itemBuilder: (context, index) {
-                    final delivery = _confirmedDeliveries[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      elevation: 5,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.green, width: 1)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
+      appBar: AppBar(
+        title: Text('Next: ${currentTarget['customerName']}'),
+        backgroundColor: Colors.blueGrey[900],
+        foregroundColor: Colors.white,
+      ),
+      body: Column(
+        children: [
+          // 80% ක් සිතියම සඳහා (Expanded මගින් ඉතිරි ඉඩ සියල්ල ගනී)
+          Expanded(
+            flex: 4, // 80% අනුපාතය
+            child: GoogleMap(
+              initialCameraPosition: CameraPosition(target: _initialPosition, zoom: 14),
+              myLocationEnabled: true,
+              myLocationButtonEnabled: true,
+              onMapCreated: (GoogleMapController controller) {
+                _mapController = controller;
+              },
+              // පාර්සලය බෙදිය යුතු ස්ථානයට රතු පාට Marker එකක් දමයි
+              markers: {
+                Marker(
+                  markerId: const MarkerId('targetDestination'),
+                  position: _initialPosition, // පසුව මෙතැනට නියම Latitude/Longitude ලබා දිය යුතුය
+                  infoWindow: InfoWindow(title: currentTarget['customerName'], snippet: currentTarget['address']),
+                )
+              },
+            ),
+          ),
+          
+          // 20% ක් විස්තර සහ බොත්තම් සඳහා
+          Expanded(
+            flex: 1, // 20% අනුපාතය
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, -5))],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(delivery['customerName'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                            const SizedBox(height: 8),
-                            
-                            // ලිපිනය මත Click කළ විටද Maps විවෘත වේ
-                            InkWell(
-                              onTap: () => _openGoogleMaps(delivery['address']),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.location_on, color: Colors.red, size: 20),
-                                  const SizedBox(width: 4),
-                                  Expanded(child: Text(delivery['address'], style: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline))),
-                                ],
-                              ),
-                            ),
-                            
-                            const SizedBox(height: 8),
-                            Text('COD: ${delivery['codAmount']}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 18)),
-                            if (delivery['notes'] != null && delivery['notes'].toString().isNotEmpty)
-                              Text('Note: ${delivery['notes']}', style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.w600)),
-                            
-                            const Divider(height: 24),
-
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                              children: [
-                                // Navigate Button
-                                ElevatedButton.icon(
-                                  icon: const Icon(Icons.map),
-                                  label: const Text('Map'),
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey, foregroundColor: Colors.white),
-                                  onPressed: () => _openGoogleMaps(delivery['address']),
-                                ),
-                                // Call Button
-                                ElevatedButton.icon(
-                                  icon: const Icon(Icons.call),
-                                  label: const Text('Call'),
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, foregroundColor: Colors.white),
-                                  onPressed: () => _makePhoneCall(delivery['phone']),
-                                ),
-                                // Delivered Button
-                                ElevatedButton.icon(
-                                  icon: const Icon(Icons.check_box),
-                                  label: const Text('Delivered'),
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                                  onPressed: () => _markAsDelivered(delivery['id']),
-                                ),
-                              ],
-                            ),
+                            Text(currentTarget['customerName'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18), overflow: TextOverflow.ellipsis),
+                            Text(currentTarget['address'], style: const TextStyle(color: Colors.grey, fontSize: 14), overflow: TextOverflow.ellipsis, maxLines: 1),
                           ],
                         ),
                       ),
-                    );
-                  },
-                ),
+                      Text('Rs. ${currentTarget['codAmount']}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 20)),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      // කෝල් බොත්තම
+                      Expanded(
+                        flex: 1,
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.call),
+                          label: const Text('Call'),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 12)),
+                          onPressed: () => _makePhoneCall(currentTarget['phone']),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Delivered බොත්තම
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.check_circle),
+                          label: const Text('DELIVERED', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 12)),
+                          onPressed: () => _markAsDelivered(currentTarget['id']),
+                        ),
+                      ),
+                    ],
+                  )
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
