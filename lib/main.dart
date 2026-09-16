@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-// අපි නිර්මාණය කළ අලුත් තිරයන් 3 මෙතැනින් සම්බන්ධ වේ
+// අපි නිර්මාණය කළ අලුත් තිරයන් 4 මෙතැනින් සම්බන්ධ වේ
 import 'smart_scanner_screen.dart'; 
 import 'pending_calls_screen.dart';
 import 'route_list_screen.dart';
+import 'end_of_day_report_screen.dart';
 
 void main() {
   runApp(const ShiftDropApp());
@@ -44,7 +45,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     const DashboardScreen(),
     const Center(child: Text('My Route (Map Integration Goes Here)')),
     const Center(child: Text('Messages (WhatsApp Logs Go Here)')),
-    const Center(child: Text('Profile (Settings Go Here)')),
+    const EndOfDayReportScreen(), // අලුතින් එකතු කළ 4 වෙනි Tab එක (Reports)
   ];
 
   @override
@@ -84,7 +85,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
           NavigationDestination(icon: Icon(Icons.grid_view), label: 'Dashboard'),
           NavigationDestination(icon: Icon(Icons.route), label: 'My Route'),
           NavigationDestination(icon: Icon(Icons.chat_bubble_outline), label: 'Messages'),
-          NavigationDestination(icon: Icon(Icons.person_outline), label: 'Profile'),
+          NavigationDestination(icon: Icon(Icons.analytics), label: 'Reports'), // Reports අයිකන් එක
         ],
       ),
     );
