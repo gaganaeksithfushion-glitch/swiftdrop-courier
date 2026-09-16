@@ -6,12 +6,11 @@ workflows:
     environment:
       flutter: stable
     scripts:
-      - name: Fresh Recreate and Build APK
+      - name: Create Android Native Files and Build
         script: |
-          # පරණ නෑටිව් ෆෝල්ඩරය ඉවත් කර v2 ප්‍රමිතියෙන් අලුතින් සැකසීම
-          rm -rf android/
+          # Flutter project එකට නැතිවුණු android ෆෝල්ඩරය නැවත සාදා ගැනීම
           flutter create . --platforms=android
           flutter pub get
-          flutter build apk --release
+          flutter build appbundle --release
     artifacts:
-      - build/app/outputs/flutter-apk/app-release.apk
+      - build/app/outputs/bundle/release/app-release.APK
