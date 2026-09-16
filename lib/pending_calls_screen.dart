@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class PendingCallsScreen extends StatefulWidget {
   const PendingCallsScreen({super.key});
@@ -8,47 +9,38 @@ class PendingCallsScreen extends StatefulWidget {
 }
 
 class _PendingCallsScreenState extends State<PendingCallsScreen> {
-  // ඔබේ ප්‍රොජෙක්ට් එකේ පවතින ලොজික් එක මෙතැනට යෙදිය හැක
   final List<Map<String, dynamic>> pendingCalls = [
-    {'name': 'Nimal Perera', 'phone': '0771234567', 'address': 'Kandy Road, Colombo', 'attempts': 1},
-    {'name': 'Kamal Silva', 'phone': '0719876543', 'address': 'Galle Road, Matara', 'attempts': 3},
+    {'name': 'Nimal Perera', 'phone': '+94771234567', 'address': 'Kandy Road, Colombo'},
+    {'name': 'Kamal Silva', 'phone': '+94719876543', 'address': 'Galle Road, Matara'},
   ];
 
-  void _updateStatus(int index, String status) {
-    setState(() {
-      pendingCalls.removeAt(index);
-    });
-
-    if (status == 'Confirmed') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('පාර්සලය Confirmed ලෙස සටහන් විය!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } else if (status == 'Returned') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Attempts 4ක් ඉක්මවූ බැවින් Returned ලිස්ට් එකට මාරු විය.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No Answer ලෙස සටහන් විය.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+  Future<void> _makePhoneCall(String phoneNumber) async {
+    final Uri launchUri = Uri(scheme: 'tel', path: phoneNumber);
+    if (await canLaunchUrl(launchUri)) {
+      await launchUrl(launchUri);
     }
+  }
+
+  Future<void> _openWhatsApp(String phone, String name) async {
+    final formattedPhone = phone.replaceAll('+', '');
+    final message = Uri.encodeComponent('ഹലോ $name, ඔබේ පාර්සලය සම්බන්ධයෙනි.');
+    final Uri whatsappUri = Uri.parse('https://wa.me/$formattedPhone?text=$message');
+    if (await canLaunchUrl(whatsappUri)) {
+      await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  void _updateStatus(int index, String status) {
+    setState(() => pendingCalls.removeAt(index));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('පාර්සලය $status ලෙස සටහන් විය!'), backgroundColor: status == 'Confirmed' ? Colors.green : Colors.red),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pending Calls'),
-      ),
+      appBar: AppBar(title: const Text('Pending Calls')),
       body: pendingCalls.isEmpty
           ? const Center(child: Text('Pending calls කිසිවක් නැත.'))
           : ListView.builder(
@@ -58,20 +50,35 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
                 final call = pendingCalls[index];
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12.0),
-                  child: ListTile(
-                    title: Text(call['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('${call['phone']}\n${call['address']}'),
-                    isThreeLine: true,
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.check, color: Colors.green),
-                          onPressed: () => _updateStatus(index, 'Confirmed'),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.red),
-                          onPressed: () => _updateStatus(index, 'Returned'),
+                        Text(call['name'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        Text('Address: ${call['address']}'),
+                        Text('Phone: ${call['phone']}'),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.phone, color: Colors.blue),
+                              onPressed: () => _makePhoneCall(call['phone']),
+                              tooltip: 'Call',
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.chat, color: Colors.green),
+                              onPressed: () => _openWhatsApp(call['phone'], call['name']),
+                              tooltip: 'WhatsApp',
+                            ),
+                            const Spacer(),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                              onPressed: () => _updateStatus(index, 'Confirmed'),
+                              child: const Text('Confirm'),
+                            ),
+                          ],
                         ),
                       ],
                     ),
