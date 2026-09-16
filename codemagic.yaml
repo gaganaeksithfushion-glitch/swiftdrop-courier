@@ -1,1 +1,21 @@
-
+workflows:
+  android-release-pipeline:
+    name: ShiftDrop Android Release
+    instance_type: mac_mini_m2 # Fast machine for quick builds
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      groups:
+        - github_credentials # Add your GitHub token in the Codemagic UI
+    scripts:
+      - name: Fetch Flutter Packages
+        script: flutter pub get
+      - name: Build Lightweight Android APK
+        script: flutter build apk --release --target-platform android-arm,android-arm64
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+    publishing:
+      github_releases:
+        personal_token: $GITHUB_TOKEN
+        draft: false
+        prerelease: false
