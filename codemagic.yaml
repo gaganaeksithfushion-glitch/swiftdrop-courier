@@ -6,8 +6,12 @@ workflows:
     environment:
       flutter: stable
     scripts:
-      - name: Build APK Directly
+      - name: Clean Cache and Build APK
         script: |
+          # Codemagic සර්වර් එකේ කැෂි වූ පරණ බිල් ඩේටා සම්පූර්ණයෙන්ම ඉවත් කිරීම
+          rm -rf build/
+          rm -rf android/.gradle/
+          flutter clean
           flutter pub get
           flutter build apk --release
     artifacts:
