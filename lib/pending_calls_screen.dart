@@ -27,7 +27,7 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
   // WhatsApp චැට් වෙත කෙළින්ම යොමු කිරීම
   Future<void> _openWhatsApp(String phone, String name) async {
     final formattedPhone = phone.replaceAll('+', '').replaceAll(' ', '');
-    final message = Uri.encodeComponent('ഹലോ $name, ඔබේ පාර්සලය සම්බන්ධයෙනි.');
+    final message = Uri.encodeComponent('ආයුබෝවන් $name, ඔබේ පාර්සලය සම්බන්ධයෙනි.');
     final Uri whatsappUri = Uri.parse('https://wa.me/$formattedPhone?text=$message');
     
     if (await canLaunchUrl(whatsappUri)) {
