@@ -6,16 +6,10 @@ workflows:
     environment:
       flutter: stable
     scripts:
-      - name: Fix and Clean Android V1 Embedding
+      - name: Force Clean and Build
         script: |
-          # Clean up any cached builds
           flutter clean
-          # Fix AndroidManifest.xml v1 embedding reference if it exists
-          if [ -f "android/app/src/main/AndroidManifest.xml" ]; then
-            sed -i '' 's/android:name="io.flutter.app.FlutterApplication"/ /g' android/app/src/main/AndroidManifest.xml || true
-          fi
           flutter pub get
-      - name: Build Android APK
-        script: flutter build apk --release
+          flutter build appbundle --release
     artifacts:
-      - build/app/outputs/flutter-apk/app-release.apk
+      - build/app/outputs/bundle/release/app-release.aab
