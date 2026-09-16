@@ -1,5 +1,5 @@
 name: swiftdrop_courier
-description: "A lightweight delivery management application."
+description: "A new Flutter project for ShiftDrop Courier."
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -10,19 +10,13 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
-  image_picker: ^1.1.2
-  google_generative_ai: ^0.4.6
-  sqflite: ^2.3.0
-  path: ^1.9.0
-  csv: ^6.0.0
-  path_provider: ^2.1.2
-  url_launcher: ^6.3.0
-  pdf: ^3.11.0
-  printing: ^5.12.0
-  shared_preferences: ^2.2.3
-  # Map එක සඳහා අලුතින් එකතු කළ Packages
-  google_maps_flutter: ^2.5.3
-  geolocator: ^10.1.0
+  mobile_scanner: ^5.2.3
+  url_launcher: ^6.3.2
+  geolocator: ^10.1.1
+  google_maps_flutter: ^2.18.0
+  shared_preferences: ^2.5.5
+  pdf: ^3.13.0
+  printing: ^5.15.0
 
 dev_dependencies:
   flutter_test:
@@ -31,3 +25,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  
+  # assets හෝ images අවශ්‍ය නම් මෙහි එකතු කළ හැක
+  # assets:
+  #   - assets/
