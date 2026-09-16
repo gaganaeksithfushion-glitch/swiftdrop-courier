@@ -6,10 +6,13 @@ workflows:
     environment:
       flutter: stable
     scripts:
-      - name: Force Clean and Build
+      - name: Install dependencies
+        script: flutter pub get
+      - name: Build App Bundle with Force Clean
         script: |
-          flutter clean
-          flutter pub get
+          cd android
+          ./gradlew clean
+          cd ..
           flutter build appbundle --release
     artifacts:
       - build/app/outputs/bundle/release/app-release.aab
