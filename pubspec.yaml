@@ -17,9 +17,10 @@ dependencies:
   csv: ^6.0.0
   path_provider: ^2.1.2
   url_launcher: ^6.3.0
-  # PDF රිපෝට් සෑදීම සඳහා අලුතින් එකතු කළ packages
   pdf: ^3.11.0
   printing: ^5.12.0
+  # Settings සේව් කිරීම සඳහා
+  shared_preferences: ^2.2.3
 
 dev_dependencies:
   flutter_test:
