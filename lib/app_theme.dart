@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // ඔබ පෙන්වූ මෝස්තරවල ඇති ප්‍රධාන Deep Purple වර්ණය
   static const Color primaryPurple = Color(0xFF4A148C);
   static const Color secondaryPurple = Color(0xFF6A1B9A);
   static const Color surfaceColor = Color(0xFFF8F9FA);
@@ -18,8 +17,6 @@ class AppTheme {
         surface: surfaceColor,
       ),
       scaffoldBackgroundColor: surfaceColor,
-      
-      // AppBar මෝස්තරය
       appBarTheme: const AppBarTheme(
         backgroundColor: primaryPurple,
         foregroundColor: Colors.white,
@@ -31,18 +28,13 @@ class AppTheme {
           color: Colors.white,
         ),
       ),
-
-      // කාඩ් (Cards) සඳහා පොදු මෝස්තරය (Rounded & Clean)
-      cardTheme: CardTheme(
+      cardTheme: const CardThemeData(
         color: cardColor,
         elevation: 2,
-        shadowColor: Colors.black.withOpacity(0.1),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.all(Radius.circular(16)),
         ),
       ),
-
-      // බොත්තම් (Buttons) සඳහා පොදු මෝස්තරය
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: primaryPurple,
