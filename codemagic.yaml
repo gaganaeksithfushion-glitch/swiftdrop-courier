@@ -6,12 +6,11 @@ workflows:
     environment:
       flutter: stable
     scripts:
-      - name: Clean Cache and Build APK
+      - name: Fresh Recreate and Build APK
         script: |
-          # Codemagic සර්වර් එකේ කැෂි වූ පරණ බිල් ඩේටා සම්පූර්ණයෙන්ම ඉවත් කිරීම
-          rm -rf build/
-          rm -rf android/.gradle/
-          flutter clean
+          # පරණ නෑටිව් ෆෝල්ඩරය ඉවත් කර v2 ප්‍රමිතියෙන් අලුතින් සැකසීම
+          rm -rf android/
+          flutter create . --platforms=android
           flutter pub get
           flutter build apk --release
     artifacts:
