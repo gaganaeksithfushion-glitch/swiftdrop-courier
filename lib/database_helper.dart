@@ -19,7 +19,6 @@ class DatabaseHelper {
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
-
     return await openDatabase(path, version: 2, onCreate: _createDB);
   }
 
@@ -60,7 +59,6 @@ class DatabaseHelper {
     final db = await instance.database;
     final now = DateTime.now();
     final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59).millisecondsSinceEpoch;
-
     return await db.query(
       'deliveries',
       where: '(status = ? OR status = ?) AND (rescheduledDate IS NULL OR rescheduledDate <= ?)',
@@ -69,15 +67,9 @@ class DatabaseHelper {
     );
   }
 
-  // අලුතින් එකතු කළ කේතය: Confirm කළ පාර්සල් ටික (Route List එකට) ලබා ගැනීම
   Future<List<Map<String, dynamic>>> getConfirmedDeliveries() async {
     final db = await instance.database;
-    return await db.query(
-      'deliveries',
-      where: 'status = ?',
-      whereArgs: ['confirmed'],
-      orderBy: 'timestamp ASC', // පරණ ඒවා උඩින් පෙන්වයි
-    );
+    return await db.query('deliveries', where: 'status = ?', whereArgs: ['confirmed'], orderBy: 'timestamp ASC');
   }
 
   Future<int> updateDeliveryStatus(int id, String status, int attempts) async {
@@ -90,8 +82,34 @@ class DatabaseHelper {
     return await db.update('deliveries', {'status': 'rescheduled', 'rescheduledDate': newDateEpoch, 'notes': note}, where: 'id = ?', whereArgs: [id]);
   }
 
+  // අලුතින් එකතු කළ කේතය: End of Day Report එක සඳහා දත්ත ලබා ගැනීම
+  Future<Map<String, dynamic>> getDailyReportSummary() async {
+    final db = await instance.database;
+    
+    final delivered = await db.query('deliveries', where: 'status = ?', whereArgs: ['delivered']);
+    final returned = await db.query('deliveries', where: 'status = ?', whereArgs: ['returned']);
+    final pending = await db.query('deliveries', where: 'status = ? OR status = ?', whereArgs: ['pending', 'rescheduled']);
+
+    double totalCod = 0;
+    for (var item in delivered) {
+      // අකුරු හෝ රුපියල් සලකුණු තිබුණොත් ඒවා අයින් කරලා ගාණ විතරක් එකතු කිරීම
+      String codStr = item['codAmount'].toString().replaceAll(RegExp(r'[^0-9.]'), '');
+      if (codStr.isNotEmpty) {
+        totalCod += double.tryParse(codStr) ?? 0;
+      }
+    }
+
+    return {
+      'deliveredCount': delivered.length,
+      'returnedCount': returned.length,
+      'pendingCount': pending.length,
+      'totalCod': totalCod,
+      'deliveredList': delivered,
+      'returnedList': returned,
+    };
+  }
+
   Future<void> backupAndCleanOldData() async {
-    // Backup code remains the same
     final db = await instance.database;
     final fourteenDaysAgo = DateTime.now().subtract(const Duration(days: 14)).millisecondsSinceEpoch;
     final oldData = await db.query('deliveries', where: 'timestamp < ?', whereArgs: [fourteenDaysAgo]);
