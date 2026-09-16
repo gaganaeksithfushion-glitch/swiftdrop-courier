@@ -16,8 +16,8 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
   List<Map<String, dynamic>> _scannedItems = [];
   bool _isLoading = false;
   
-  // TODO: Get a free key from https://aistudio.google.com/ and paste it here
-  static const String _apiKey = 'YOUR_GEMINI_API_KEY_HERE';
+  // ඔබ ලබා දුන් නිල Gemini API Key එක මෙහි ඇතුළත් කර ඇත
+  static const String _apiKey = 'AQ.Ab8RN6KtDFji-auKzwCSm_LomGmK6rP0VsG1t88Xsya9Tq54Qg';
 
   Future<void> _takePhotoAndScan() async {
     final ImagePicker picker = ImagePicker();
@@ -97,7 +97,6 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
     });
   }
 
-  // අතින් විස්තර ඇතුලත් කිරීම සඳහා Bottom Sheet එක (Manual Entry)
   void _showManualEntrySheet() {
     final TextEditingController billCtrl = TextEditingController();
     final TextEditingController itemCtrl = TextEditingController();
@@ -108,7 +107,7 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
 
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true, // කීබෝඩ් එක එද්දී උඩට එන්න
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
         return Padding(
@@ -156,7 +155,7 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
                     };
                     await DatabaseHelper.instance.insertDelivery(deliveryData);
                     if (context.mounted) {
-                      Navigator.pop(context); // Sheet එක වසන්න
+                      Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('පාර්සලය අතින් එකතු කරන ලදී!'), backgroundColor: Colors.green));
                     }
                   },
@@ -222,7 +221,7 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: constပြင်ဆද all(16.0),
               child: ElevatedButton.icon(
                 icon: const Icon(Icons.save_all),
                 label: const Text('Save All to Morning List', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -244,7 +243,6 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
           ]
         ],
       ),
-      // අතින් දත්ත ඇතුලත් කිරීමට ඇති Floating Action Button එක
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showManualEntrySheet,
         icon: const Icon(Icons.edit_document),
