@@ -61,19 +61,24 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
         title: const Text('Smart Scanner'),
         actions: [
           IconButton(
-            icon: ValueListenableBuilder<TorchState>(
-              valueListenable: cameraController.torchState,
-              builder: (context, state, child) {
-                return Icon(state == TorchState.on ? Icons.flash_on : Icons.flash_off, color: state == TorchState.on ? Colors.yellow : Colors.grey);
+            icon: ListenableBuilder(
+              listenable: cameraController,
+              builder: (context, child) {
+                final TorchState state = cameraController.value.torchState;
+                return Icon(
+                  state == TorchState.on ? Icons.flash_on : Icons.flash_off,
+                  color: state == TorchState.on ? Colors.yellow : Colors.grey,
+                );
               },
             ),
             onPressed: () => cameraController.toggleTorch(),
           ),
           IconButton(
-            icon: ValueListenableBuilder<CameraFacing>(
-              valueListenable: cameraController.cameraFacingState,
-              builder: (context, state, child) {
-                return Icon(state == CameraFacing.front ? Icons.camera_front : Icons.camera_rear);
+            icon: ListenableBuilder(
+              listenable: cameraController,
+              builder: (context, child) {
+                final CameraFacing direction = cameraController.value.cameraDirection;
+                return Icon(direction == CameraFacing.front ? Icons.camera_front : Icons.camera_rear);
               },
             ),
             onPressed: () => cameraController.switchCamera(),
