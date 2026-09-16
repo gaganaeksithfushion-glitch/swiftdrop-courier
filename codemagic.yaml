@@ -8,7 +8,7 @@ workflows:
     scripts:
       - name: Fetch Flutter Packages
         script: flutter pub get
-      - name: Build Lightweight Android APK
-        script: flutter build apk --release --target-platform android-arm,android-arm64
+      - name: Build Android APK
+        script: flutter build apk --release
     artifacts:
       - build/app/outputs/flutter-apk/app-release.apk
