@@ -10,7 +10,6 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
-  mobile_scanner: ^5.2.3
   url_launcher: ^6.3.2
   geolocator: ^10.1.1
   google_maps_flutter: ^2.18.0
@@ -21,6 +20,9 @@ dependencies:
   path: ^1.8.3
   csv: ^6.0.0
   path_provider: ^2.1.1
+  image_picker: ^1.1.2
+  permission_handler: ^11.3.1
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:
