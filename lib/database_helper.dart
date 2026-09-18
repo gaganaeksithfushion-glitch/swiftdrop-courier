@@ -72,6 +72,12 @@ class DatabaseHelper {
     return await db.query('deliveries', where: 'status = ?', whereArgs: ['confirmed'], orderBy: 'timestamp ASC');
   }
 
+  // Report screen එකේ Filter/Select කිරීම සඳහා bills/deliveries ඔක්කොම ලබා ගැනීම
+  Future<List<Map<String, dynamic>>> getAllDeliveries() async {
+    final db = await instance.database;
+    return await db.query('deliveries', orderBy: 'timestamp DESC');
+  }
+
   Future<int> updateDeliveryStatus(int id, String status, int attempts) async {
     final db = await instance.database;
     return await db.update('deliveries', {'status': status, 'callAttempts': attempts}, where: 'id = ?', whereArgs: [id]);
