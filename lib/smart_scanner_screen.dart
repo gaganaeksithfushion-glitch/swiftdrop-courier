@@ -63,7 +63,7 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
   void _showComingSoonMessage() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('🚧 Smart AI Scan feature එක සංවර්ධනය වෙමින් පවතී (Under Development). ළඟදීම එනවා!'),
+        content: Text('🚧 This feature activates in the premium version!'),
         backgroundColor: Colors.deepPurple,
         duration: Duration(seconds: 3),
       ),
