@@ -1,57 +1,63 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:crypto/crypto.dart';
 import 'main.dart';
+import 'registration_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final String registeredPhone;
+  const LoginScreen({super.key, required this.registeredPhone});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
 
   @override
   void dispose() {
-    _phoneController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
-    String phone = _phoneController.text.trim();
-    final phoneRegExp = RegExp(r'^(?:0|94|\+94)?(7[01245678][0-9]{7})$');
+  String _hashPassword(String password) {
+    return sha256.convert(utf8.encode(password)).toString();
+  }
 
-    if (!phoneRegExp.hasMatch(phone)) {
+  Future<void> _handleLogin() async {
+    if (_passwordController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('කරුණාකර නිවැරදි WhatsApp අංකයක් ඇතුළත් කරන්න (උදා: 0712345678)'),
-          backgroundColor: Colors.red,
-        ),
+        const SnackBar(content: Text('කරුණාකර Password එක ඇතුළත් කරන්න.'), backgroundColor: Colors.red),
       );
       return;
     }
 
-    // 0XXXXXXXXX format එකට normalize කිරීම
-    if (phone.startsWith('+94')) {
-      phone = '0${phone.substring(3)}';
-    } else if (phone.startsWith('94') && phone.length == 11) {
-      phone = '0${phone.substring(2)}';
-    }
-
     setState(() => _isLoading = true);
 
-    // App එක close කරලා ආයෙත් open කළත් login state එක මතක තියාගැනීමට save කිරීම
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('whatsapp_number', phone);
+    final storedHash = prefs.getString('registered_password_hash');
+    final enteredHash = _hashPassword(_passwordController.text);
+
+    if (storedHash != enteredHash) {
+      setState(() => _isLoading = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password එක වැරදියි!'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    await prefs.setBool('is_logged_in', true);
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (context) => MainNavigationShell(whatsappNumber: phone)),
+      MaterialPageRoute(builder: (context) => MainNavigationShell(whatsappNumber: widget.registeredPhone)),
     );
   }
 
@@ -67,40 +73,46 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 Icon(Icons.local_shipping, size: 80, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(height: 16),
-                const Text(
-                  'ShiftDrop Courier',
-                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-                ),
+                const Text('ShiftDrop Courier', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
-                const Text(
-                  'ඔබේ WhatsApp අංකය ඇතුළත් කර ඇප් එකට පිවිසෙන්න.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                Text(
+                  widget.registeredPhone,
+                  style: const TextStyle(fontSize: 16, color: Colors.grey, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 30),
                 TextField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
+                  controller: _passwordController,
+                  obscureText: true,
+                  onSubmitted: (_) => _handleLogin(),
                   decoration: const InputDecoration(
-                    labelText: 'WhatsApp Number',
-                    hintText: '07X XXX XXXX',
+                    labelText: 'Password',
                     border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.phone),
+                    prefixIcon: Icon(Icons.lock),
                   ),
                 ),
                 const SizedBox(height: 20),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 50),
-                  ),
+                  style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
                   onPressed: _isLoading ? null : _handleLogin,
                   child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Text('Verify & Continue', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Login', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: () async {
+                    // Different number එකකින් register වෙන්න ඕන නම් (device එක වෙනස් උනොත් වගේ)
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.remove('registered_phone');
+                    await prefs.remove('registered_password_hash');
+                    await prefs.remove('is_logged_in');
+                    if (!context.mounted) return;
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (context) => const RegistrationScreen()),
+                    );
+                  },
+                  child: const Text('වෙන Phone Number එකකින් Register වෙන්න'),
                 ),
               ],
             ),
