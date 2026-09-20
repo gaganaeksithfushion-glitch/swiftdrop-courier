@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'database_helper.dart';
+import 'smart_scanner_screen.dart';
 
 class RouteListScreen extends StatefulWidget {
   const RouteListScreen({super.key});
@@ -40,10 +41,19 @@ class _RouteListScreenState extends State<RouteListScreen> {
   }
 
   Future<void> _makePhoneCall(String phoneNumber) async {
+    if (phoneNumber.isEmpty) return;
     final Uri launchUri = Uri(scheme: 'tel', path: phoneNumber);
     if (await canLaunchUrl(launchUri)) {
       await launchUrl(launchUri);
     }
+  }
+
+  Future<void> _editDelivery(Map<String, dynamic> item) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => SmartScannerScreen(deliveryToEdit: item)),
+    );
+    if (result == true) _loadDeliveries();
   }
 
   // Order එකේ Status එක Manual ලෙස වෙනස් කිරීම (Delivered / Returned / Pending ආදී)
@@ -67,72 +77,6 @@ class _RouteListScreenState extends State<RouteListScreen> {
     });
     final orderedIds = deliveries.map((d) => d['id'] as int).toList();
     await dbHelper.updateRouteOrder(orderedIds);
-  }
-
-  // Order එකේ Details (Name/Phone/Address/Item/Price) Manual ලෙස Edit කිරීම
-  Future<void> _showEditDialog(Map<String, dynamic> item) async {
-    final nameController = TextEditingController(text: (item['customerName'] ?? '').toString());
-    final billController = TextEditingController(text: (item['billNumber'] ?? '').toString());
-    final phoneController = TextEditingController(text: (item['phone'] ?? '').toString());
-    final phone2Controller = TextEditingController(text: (item['phone2'] ?? '').toString());
-    final addressController = TextEditingController(text: (item['address'] ?? '').toString());
-    final itemController = TextEditingController(text: (item['itemName'] ?? '').toString());
-    final codController = TextEditingController(text: (item['codAmount'] ?? '').toString());
-
-    await showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Edit Order Details'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Customer Name')),
-                const SizedBox(height: 10),
-                TextField(controller: billController, decoration: const InputDecoration(labelText: 'Bill No')),
-                const SizedBox(height: 10),
-                TextField(controller: phoneController, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone')),
-                const SizedBox(height: 10),
-                TextField(controller: phone2Controller, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone 2 (Optional)')),
-                const SizedBox(height: 10),
-                TextField(controller: addressController, decoration: const InputDecoration(labelText: 'Address')),
-                const SizedBox(height: 10),
-                TextField(controller: itemController, decoration: const InputDecoration(labelText: 'Item Name')),
-                const SizedBox(height: 10),
-                TextField(controller: codController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'COD Price (Rs.)')),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                await dbHelper.updateDeliveryDetails(item['id'] as int, {
-                  'customerName': nameController.text,
-                  'billNumber': billController.text,
-                  'phone': phoneController.text,
-                  'phone2': phone2Controller.text,
-                  'address': addressController.text,
-                  'itemName': itemController.text,
-                  'codAmount': codController.text,
-                });
-                if (!mounted) return;
-                Navigator.pop(dialogContext);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Details Update විය!'), backgroundColor: Colors.green),
-                );
-                _loadDeliveries();
-              },
-              child: const Text('Save Changes'),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   // "Auto Order by Location" - තාම හදලා නෑ, Premium feature එකක් විදිහට Tease කිරීම
@@ -236,6 +180,28 @@ class _RouteListScreenState extends State<RouteListScreen> {
     );
   }
 
+  // Dialer-style Tappable Phone Number Row එකක්
+  Widget _phoneRow(String phone, {required Color color}) {
+    if (phone.isEmpty) return const SizedBox.shrink();
+    return InkWell(
+      onTap: () => _makePhoneCall(phone),
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          children: [
+            Icon(Icons.call, size: 15, color: color),
+            const SizedBox(width: 6),
+            Text(
+              phone,
+              style: TextStyle(color: color, fontWeight: FontWeight.w600, decoration: TextDecoration.underline),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -285,7 +251,7 @@ class _RouteListScreenState extends State<RouteListScreen> {
                           final itemName = (item['itemName'] ?? 'Parcel').toString();
                           final codAmount = (item['codAmount'] ?? '0').toString();
                           final address = (item['address'] ?? '').toString();
-                          final phone = (item['phone'] ?? '').toString();
+                          final phone1 = (item['phone'] ?? '').toString();
                           final phone2 = (item['phone2'] ?? '').toString();
                           final customerName = (item['customerName'] ?? '').toString();
                           final id = item['id'] as int;
@@ -328,6 +294,11 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                           customerName,
                                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                                         ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                                        onPressed: () => _editDelivery(item),
+                                        tooltip: 'Edit',
                                       ),
                                       PopupMenuButton<String>(
                                         icon: const Icon(Icons.more_vert),
@@ -376,32 +347,8 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                         const SizedBox(height: 8),
                                         Text(address),
                                         const SizedBox(height: 6),
-                                        // Phone number(s) - Tap කරලාම call කරන්න පුළුවන් (dialer)
-                                        if (phone.isNotEmpty)
-                                          InkWell(
-                                            onTap: () => _makePhoneCall(phone),
-                                            child: Row(
-                                              children: [
-                                                const Icon(Icons.phone, size: 15, color: Colors.blue),
-                                                const SizedBox(width: 6),
-                                                Text('Phone: $phone', style: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline)),
-                                              ],
-                                            ),
-                                          ),
-                                        if (phone2.isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(top: 2),
-                                            child: InkWell(
-                                              onTap: () => _makePhoneCall(phone2),
-                                              child: Row(
-                                                children: [
-                                                  const Icon(Icons.phone, size: 15, color: Colors.blue),
-                                                  const SizedBox(width: 6),
-                                                  Text('Phone 2: $phone2', style: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline)),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
+                                        _phoneRow(phone1, color: Colors.blue),
+                                        _phoneRow(phone2, color: Colors.indigo),
                                       ],
                                     ),
                                   ),
@@ -417,11 +364,6 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                         icon: const Icon(Icons.event_repeat, color: Colors.orange),
                                         onPressed: () => _showRescheduleDialog(item),
                                         tooltip: 'Reschedule',
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.edit, color: Colors.grey),
-                                        onPressed: () => _showEditDialog(item),
-                                        tooltip: 'Edit Details',
                                       ),
                                       const Spacer(),
                                       ElevatedButton(
