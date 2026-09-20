@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geolocator/geolocator.dart';
 import 'database_helper.dart';
+import 'smart_scanner_screen.dart';
 
 class PendingCallsScreen extends StatefulWidget {
   const PendingCallsScreen({super.key});
@@ -35,8 +37,9 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
     });
   }
 
-  // දුරකථන ඇමතුමක් ලබා දීම (Dialer)
+  // දුරකථන ඇමතුමක් ලබා දීම (Dialer) - Phone 1 හෝ Phone 2 ඕනෑම එකකට
   Future<void> _makePhoneCall(String phoneNumber) async {
+    if (phoneNumber.isEmpty) return;
     final Uri launchUri = Uri(scheme: 'tel', path: phoneNumber);
     if (await canLaunchUrl(launchUri)) {
       await launchUrl(launchUri);
@@ -45,23 +48,159 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
     }
   }
 
-  // Settings screen එකේ Save කරපු WhatsApp Message Template එක ලබාගැනීම
-  Future<String> _getMessageTemplate() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('whatsapp_template') ?? _defaultMsg;
+  Future<void> _editDelivery(Map<String, dynamic> item) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => SmartScannerScreen(deliveryToEdit: item)),
+    );
+    if (result == true) _loadPendingCalls();
   }
 
-  // WhatsApp චැට් වෙත message එකක් සමග යොමු කිරීම
-  Future<void> _openWhatsAppWithMessage(String phone, String message) async {
+  // Settings එකේ Save කරපු WhatsApp Template එක Load කිරීම, {name}/{cod} Replace කිරීම
+  Future<String> _buildMessage(Map<String, dynamic> item) async {
+    final prefs = await SharedPreferences.getInstance();
+    String template = prefs.getString('whatsapp_template') ?? _defaultMsg;
+    template = template.replaceAll('{name}', (item['customerName'] ?? '').toString());
+    template = template.replaceAll('{cod}', (item['codAmount'] ?? '0').toString());
+    return template;
+  }
+
+  // GPS හරහා Current Location එක ලබාගෙන Google Maps Link එකක් හදාගැනීම
+  Future<String?> _getLocationLink(BuildContext dialogContext) async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      ScaffoldMessenger.of(dialogContext).showSnackBar(
+        const SnackBar(content: Text('Location Services එක Off වෙලා තියෙන්නේ, කරුණාකර GPS On කරන්න!'), backgroundColor: Colors.orange),
+      );
+      return null;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        if (dialogContext.mounted) {
+          ScaffoldMessenger.of(dialogContext).showSnackBar(
+            const SnackBar(content: Text('Location Permission එක දෙන්න ඕන!'), backgroundColor: Colors.red),
+          );
+        }
+        return null;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      if (dialogContext.mounted) {
+        ScaffoldMessenger.of(dialogContext).showSnackBar(
+          const SnackBar(content: Text('Location Permission එක Settings එකෙන් On කරන්න ඕන!'), backgroundColor: Colors.red),
+        );
+      }
+      return null;
+    }
+
+    final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    return 'https://maps.google.com/?q=${position.latitude},${position.longitude}';
+  }
+
+  // Confirm Dialog එක - WhatsApp Message Preview + Location Picker සමග
+  Future<void> _showConfirmDialog(Map<String, dynamic> item) async {
+    final phone1 = (item['phone'] ?? '').toString();
+    final phone2 = (item['phone2'] ?? '').toString();
+    final messageController = TextEditingController(text: await _buildMessage(item));
+    String selectedPhone = phone1;
+    bool isFetchingLocation = false;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              title: const Text('Confirm & Send WhatsApp'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (phone2.isNotEmpty) ...[
+                      const Text('WhatsApp යවන්නේ මොන Number එකටද?', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                      const SizedBox(height: 4),
+                      DropdownButtonFormField<String>(
+                        value: selectedPhone,
+                        decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                        items: [phone1, phone2]
+                            .where((p) => p.isNotEmpty)
+                            .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                            .toList(),
+                        onChanged: (value) {
+                          if (value != null) setDialogState(() => selectedPhone = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    TextField(
+                      controller: messageController,
+                      maxLines: 5,
+                      decoration: const InputDecoration(
+                        labelText: 'WhatsApp Message',
+                        border: OutlineInputBorder(),
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: isFetchingLocation
+                          ? null
+                          : () async {
+                              setDialogState(() => isFetchingLocation = true);
+                              final link = await _getLocationLink(dialogContext);
+                              setDialogState(() => isFetchingLocation = false);
+                              if (link != null) {
+                                messageController.text = '${messageController.text}\n📍 My Location: $link';
+                              }
+                            },
+                      icon: isFetchingLocation
+                          ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.my_location, color: Colors.blue),
+                      label: const Text('Add My Current Location'),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () async {
+                    // WhatsApp නැතුව Confirm විතරක් කරන්න ඕන අයට
+                    Navigator.pop(dialogContext);
+                    await _confirmStatusOnly(item);
+                  },
+                  child: const Text('Skip & Just Confirm'),
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                  onPressed: selectedPhone.isEmpty
+                      ? null
+                      : () async {
+                          Navigator.pop(dialogContext);
+                          await _sendWhatsAppAndConfirm(item, selectedPhone, messageController.text);
+                        },
+                  icon: const Icon(Icons.chat),
+                  label: const Text('Send via WhatsApp'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _sendWhatsAppAndConfirm(Map<String, dynamic> item, String phone, String message) async {
     final formattedPhone = phone.replaceAll('+', '').replaceAll(' ', '');
     final encodedMessage = Uri.encodeComponent(message);
     final Uri whatsappUri = Uri.parse('https://wa.me/$formattedPhone?text=$encodedMessage');
 
     if (await canLaunchUrl(whatsappUri)) {
-      await launchUrl(
-        whatsappUri,
-        mode: LaunchMode.externalApplication, // බාහිරව WhatsApp ඇප් එක විවෘත කිරීමට මෙය අත්‍යවශ්‍යයි
-      );
+      await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -69,35 +208,16 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
         );
       }
     }
+    await _updateStatus(item, 'confirmed');
   }
 
-  // Manual ලෙස Chat button එකෙන් යවන WhatsApp Message එක (location ඉල්ලීමකින් තොරව)
-  Future<void> _openWhatsAppManual(Map<String, dynamic> item) async {
-    final template = await _getMessageTemplate();
-    final message = template
-        .replaceAll('{name}', (item['customerName'] ?? '').toString())
-        .replaceAll('{cod}', (item['codAmount'] ?? '0').toString());
-    await _openWhatsAppWithMessage((item['phone'] ?? '').toString(), message);
-  }
-
-  // Confirm කරාම Automatic ලෙස WhatsApp Message + Location Share ඉල්ලීම යැවීම
-  Future<void> _sendConfirmationWithLocationRequest(Map<String, dynamic> item) async {
-    final template = await _getMessageTemplate();
-    String message = template
-        .replaceAll('{name}', (item['customerName'] ?? '').toString())
-        .replaceAll('{cod}', (item['codAmount'] ?? '0').toString());
-
-    // Live Location share කරන්න ඉල්ලීමක් message එකට එකතු කිරීම
-    message +=
-        '\n\n📍 කරුණාකර ඔබගේ Live Location එක මේ WhatsApp Chat එකෙන්ම Share කරන්න:\n📎 Attach → Location → Send your current location (හෝ Live Location).';
-
-    await _openWhatsAppWithMessage((item['phone'] ?? '').toString(), message);
+  Future<void> _confirmStatusOnly(Map<String, dynamic> item) async {
+    await _updateStatus(item, 'confirmed');
   }
 
   Future<void> _updateStatus(Map<String, dynamic> item, String status) async {
     final id = item['id'] as int;
     final attempts = (item['callAttempts'] ?? 0) as int;
-    // "No Answer" වගේ තත්වයක් නම් attempt count එක වැඩි කරනවා
     final newAttempts = status == 'pending' ? attempts + 1 : attempts;
     await dbHelper.updateDeliveryStatus(id, status, newAttempts);
     if (!mounted) return;
@@ -107,95 +227,24 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
         backgroundColor: status == 'confirmed' ? Colors.green : Colors.red,
       ),
     );
-
-    // Confirm කරාම, WhatsApp message + location request එක auto ලෙස යැවීම
-    if (status == 'confirmed') {
-      await _sendConfirmationWithLocationRequest(item);
-    }
-
     _loadPendingCalls();
   }
 
-  // Order එකේ Details (Name/Phone/Address/Item/Price) Manual ලෙස Edit කිරීම
-  Future<void> _showEditDialog(Map<String, dynamic> item) async {
-    final nameController = TextEditingController(text: (item['customerName'] ?? '').toString());
-    final billController = TextEditingController(text: (item['billNumber'] ?? '').toString());
-    final phoneController = TextEditingController(text: (item['phone'] ?? '').toString());
-    final phone2Controller = TextEditingController(text: (item['phone2'] ?? '').toString());
-    final addressController = TextEditingController(text: (item['address'] ?? '').toString());
-    final itemController = TextEditingController(text: (item['itemName'] ?? '').toString());
-    final codController = TextEditingController(text: (item['codAmount'] ?? '').toString());
-
-    await showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Edit Order Details'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Customer Name')),
-                const SizedBox(height: 10),
-                TextField(controller: billController, decoration: const InputDecoration(labelText: 'Bill No')),
-                const SizedBox(height: 10),
-                TextField(controller: phoneController, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone')),
-                const SizedBox(height: 10),
-                TextField(controller: phone2Controller, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone 2 (Optional)')),
-                const SizedBox(height: 10),
-                TextField(controller: addressController, decoration: const InputDecoration(labelText: 'Address')),
-                const SizedBox(height: 10),
-                TextField(controller: itemController, decoration: const InputDecoration(labelText: 'Item Name')),
-                const SizedBox(height: 10),
-                TextField(controller: codController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'COD Price (Rs.)')),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                await dbHelper.updateDeliveryDetails(item['id'] as int, {
-                  'customerName': nameController.text,
-                  'billNumber': billController.text,
-                  'phone': phoneController.text,
-                  'phone2': phone2Controller.text,
-                  'address': addressController.text,
-                  'itemName': itemController.text,
-                  'codAmount': codController.text,
-                });
-                if (!mounted) return;
-                Navigator.pop(dialogContext);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Details Update විය!'), backgroundColor: Colors.green),
-                );
-                _loadPendingCalls();
-              },
-              child: const Text('Save Changes'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // දුරකථන අංකයක් Tap කරන්න පුළුවන් Row එකක් හදන Widget එක (Dialer විදිහට)
-  Widget _phoneRow(String label, String phone) {
+  // Dialer-style Tappable Phone Number Row එකක්
+  Widget _phoneRow(String phone, {required Color color}) {
     if (phone.isEmpty) return const SizedBox.shrink();
     return InkWell(
       onTap: () => _makePhoneCall(phone),
+      borderRadius: BorderRadius.circular(6),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2.0),
+        padding: const EdgeInsets.symmetric(vertical: 3),
         child: Row(
           children: [
-            const Icon(Icons.phone, size: 16, color: Colors.blue),
+            Icon(Icons.call, size: 16, color: color),
             const SizedBox(width: 6),
             Text(
-              '$label: $phone',
-              style: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline),
+              phone,
+              style: TextStyle(color: color, fontWeight: FontWeight.w600, decoration: TextDecoration.underline),
             ),
           ],
         ),
@@ -222,7 +271,7 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
                   itemBuilder: (context, index) {
                     final call = pendingCalls[index];
                     final name = (call['customerName'] ?? '').toString();
-                    final phone = (call['phone'] ?? '').toString();
+                    final phone1 = (call['phone'] ?? '').toString();
                     final phone2 = (call['phone2'] ?? '').toString();
                     final address = (call['address'] ?? '').toString();
                     final itemName = (call['itemName'] ?? 'Parcel').toString();
@@ -241,26 +290,28 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
                                   child: Text(name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.edit, color: Colors.grey, size: 20),
-                                  onPressed: () => _showEditDialog(call),
-                                  tooltip: 'Edit Details',
+                                  icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                                  onPressed: () => _editDelivery(call),
+                                  tooltip: 'Edit',
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 2),
                             Text('Item: $itemName  •  Price (COD): Rs. $codAmount'),
                             Text('Address: $address'),
                             const SizedBox(height: 4),
-                            // Phone number(s) - tap කරලාම call කරන්න පුළුවන් (dialer)
-                            _phoneRow('Phone', phone),
-                            _phoneRow('Phone 2', phone2),
+                            _phoneRow(phone1, color: Colors.blue),
+                            _phoneRow(phone2, color: Colors.indigo),
                             const SizedBox(height: 12),
                             Row(
                               children: [
                                 IconButton(
                                   icon: const Icon(Icons.chat, color: Colors.green),
-                                  onPressed: () => _openWhatsAppManual(call),
-                                  tooltip: 'WhatsApp Message',
+                                  onPressed: () async {
+                                    final msg = await _buildMessage(call);
+                                    await _sendWhatsAppAndConfirm(call, phone1.isNotEmpty ? phone1 : phone2, msg);
+                                  },
+                                  tooltip: 'Quick WhatsApp',
                                 ),
                                 const Spacer(),
                                 TextButton(
@@ -269,7 +320,7 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
                                 ),
                                 ElevatedButton(
                                   style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                                  onPressed: () => _updateStatus(call, 'confirmed'),
+                                  onPressed: () => _showConfirmDialog(call),
                                   child: const Text('Confirm'),
                                 ),
                               ],
