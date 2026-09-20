@@ -58,7 +58,7 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
       return;
     }
 
-    final data = {
+    final Map<String, dynamic> data = {
       'billNumber': _billNoController.text,
       'itemName': _itemController.text.isEmpty ? 'Parcel' : _itemController.text,
       'customerName': _nameController.text,
