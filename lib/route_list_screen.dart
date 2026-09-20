@@ -69,6 +69,72 @@ class _RouteListScreenState extends State<RouteListScreen> {
     await dbHelper.updateRouteOrder(orderedIds);
   }
 
+  // Order එකේ Details (Name/Phone/Address/Item/Price) Manual ලෙස Edit කිරීම
+  Future<void> _showEditDialog(Map<String, dynamic> item) async {
+    final nameController = TextEditingController(text: (item['customerName'] ?? '').toString());
+    final billController = TextEditingController(text: (item['billNumber'] ?? '').toString());
+    final phoneController = TextEditingController(text: (item['phone'] ?? '').toString());
+    final phone2Controller = TextEditingController(text: (item['phone2'] ?? '').toString());
+    final addressController = TextEditingController(text: (item['address'] ?? '').toString());
+    final itemController = TextEditingController(text: (item['itemName'] ?? '').toString());
+    final codController = TextEditingController(text: (item['codAmount'] ?? '').toString());
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Edit Order Details'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Customer Name')),
+                const SizedBox(height: 10),
+                TextField(controller: billController, decoration: const InputDecoration(labelText: 'Bill No')),
+                const SizedBox(height: 10),
+                TextField(controller: phoneController, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone')),
+                const SizedBox(height: 10),
+                TextField(controller: phone2Controller, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone 2 (Optional)')),
+                const SizedBox(height: 10),
+                TextField(controller: addressController, decoration: const InputDecoration(labelText: 'Address')),
+                const SizedBox(height: 10),
+                TextField(controller: itemController, decoration: const InputDecoration(labelText: 'Item Name')),
+                const SizedBox(height: 10),
+                TextField(controller: codController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'COD Price (Rs.)')),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                await dbHelper.updateDeliveryDetails(item['id'] as int, {
+                  'customerName': nameController.text,
+                  'billNumber': billController.text,
+                  'phone': phoneController.text,
+                  'phone2': phone2Controller.text,
+                  'address': addressController.text,
+                  'itemName': itemController.text,
+                  'codAmount': codController.text,
+                });
+                if (!mounted) return;
+                Navigator.pop(dialogContext);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Details Update විය!'), backgroundColor: Colors.green),
+                );
+                _loadDeliveries();
+              },
+              child: const Text('Save Changes'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   // "Auto Order by Location" - තාම හදලා නෑ, Premium feature එකක් විදිහට Tease කිරීම
   void _showAutoOrderComingSoon() {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -220,6 +286,7 @@ class _RouteListScreenState extends State<RouteListScreen> {
                           final codAmount = (item['codAmount'] ?? '0').toString();
                           final address = (item['address'] ?? '').toString();
                           final phone = (item['phone'] ?? '').toString();
+                          final phone2 = (item['phone2'] ?? '').toString();
                           final customerName = (item['customerName'] ?? '').toString();
                           final id = item['id'] as int;
 
@@ -308,6 +375,33 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                         ),
                                         const SizedBox(height: 8),
                                         Text(address),
+                                        const SizedBox(height: 6),
+                                        // Phone number(s) - Tap කරලාම call කරන්න පුළුවන් (dialer)
+                                        if (phone.isNotEmpty)
+                                          InkWell(
+                                            onTap: () => _makePhoneCall(phone),
+                                            child: Row(
+                                              children: [
+                                                const Icon(Icons.phone, size: 15, color: Colors.blue),
+                                                const SizedBox(width: 6),
+                                                Text('Phone: $phone', style: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline)),
+                                              ],
+                                            ),
+                                          ),
+                                        if (phone2.isNotEmpty)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 2),
+                                            child: InkWell(
+                                              onTap: () => _makePhoneCall(phone2),
+                                              child: Row(
+                                                children: [
+                                                  const Icon(Icons.phone, size: 15, color: Colors.blue),
+                                                  const SizedBox(width: 6),
+                                                  Text('Phone 2: $phone2', style: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline)),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
                                       ],
                                     ),
                                   ),
@@ -320,14 +414,14 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                         tooltip: 'Navigate',
                                       ),
                                       IconButton(
-                                        icon: const Icon(Icons.phone, color: Colors.green),
-                                        onPressed: () => _makePhoneCall(phone),
-                                        tooltip: 'Call',
-                                      ),
-                                      IconButton(
                                         icon: const Icon(Icons.event_repeat, color: Colors.orange),
                                         onPressed: () => _showRescheduleDialog(item),
                                         tooltip: 'Reschedule',
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.edit, color: Colors.grey),
+                                        onPressed: () => _showEditDialog(item),
+                                        tooltip: 'Edit Details',
                                       ),
                                       const Spacer(),
                                       ElevatedButton(
