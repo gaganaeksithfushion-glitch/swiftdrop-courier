@@ -75,10 +75,10 @@ class DatabaseHelper {
     await db.insert('deliveries', deliveryData);
   }
 
-  // Data වැරදුනොත් (Name, Phone, Address ආදිය) Edit කරලා Save කිරීම
-  Future<int> updateDeliveryDetails(int id, Map<String, dynamic> data) async {
+  // Smart Scanner එකෙන් Edit Mode එකේදී, දැනටම තියෙන Record එකක් Update කිරීම
+  Future<int> updateDelivery(int id, Map<String, dynamic> deliveryData) async {
     final db = await instance.database;
-    return await db.update('deliveries', data, where: 'id = ?', whereArgs: [id]);
+    return await db.update('deliveries', deliveryData, where: 'id = ?', whereArgs: [id]);
   }
 
   Future<List<Map<String, dynamic>>> getMorningCalls() async {
