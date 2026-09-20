@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app_theme.dart'; // අපි නිර්මාණය කළ තීම් ෆයිල් එක
 import 'login_screen.dart';
+import 'registration_screen.dart';
 import 'smart_scanner_screen.dart';
 import 'pending_calls_screen.dart';
 import 'route_list_screen.dart';
@@ -12,12 +13,21 @@ void main() {
   runApp(const ShiftDropApp());
 }
 
+class _AuthState {
+  final bool isRegistered;
+  final bool isLoggedIn;
+  final String? phone;
+  _AuthState({required this.isRegistered, required this.isLoggedIn, this.phone});
+}
+
 class ShiftDropApp extends StatelessWidget {
   const ShiftDropApp({super.key});
 
-  Future<String?> _getSavedWhatsappNumber() async {
+  Future<_AuthState> _getAuthState() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('whatsapp_number');
+    final phone = prefs.getString('registered_phone');
+    final isLoggedIn = prefs.getBool('is_logged_in') ?? false;
+    return _AuthState(isRegistered: phone != null && phone.isNotEmpty, isLoggedIn: isLoggedIn, phone: phone);
   }
 
   @override
@@ -26,18 +36,22 @@ class ShiftDropApp extends StatelessWidget {
       title: 'ShiftDrop',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      home: FutureBuilder<String?>(
-        future: _getSavedWhatsappNumber(),
+      home: FutureBuilder<_AuthState>(
+        future: _getAuthState(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(body: Center(child: CircularProgressIndicator()));
           }
-          final savedNumber = snapshot.data;
-          if (savedNumber != null && savedNumber.isNotEmpty) {
-            // දැනටමත් login වෙලා තියෙනවා නම් කෙළින්ම Dashboard එකට
-            return MainNavigationShell(whatsappNumber: savedNumber);
+          final auth = snapshot.data!;
+          if (auth.isRegistered && auth.isLoggedIn) {
+            // Register + Login දෙකම වෙලා → කෙළින්ම Dashboard එකට
+            return MainNavigationShell(whatsappNumber: auth.phone!);
+          } else if (auth.isRegistered) {
+            // Register වෙලා ඉන්නවා, ඒත් logout වෙලා → Password අහන්න
+            return LoginScreen(registeredPhone: auth.phone!);
           }
-          return const LoginScreen();
+          // කවදාවත් register වෙලා නෑ → OTP register screen එකට
+          return const RegistrationScreen();
         },
       ),
     );
@@ -65,11 +79,13 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
 
   Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('whatsapp_number');
+    // registered_phone/password ටික තියෙනවා, is_logged_in විතරක් clear කරනවා
+    // ඒකෙන් ඊළඟ වතාවේ password එකෙන් විතරක් login වෙන්න පුළුවන් (OTP ආයෙත් ඕන නෑ)
+    await prefs.setBool('is_logged_in', false);
     if (!mounted) return;
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (context) => const LoginScreen()),
+      MaterialPageRoute(builder: (context) => LoginScreen(registeredPhone: widget.whatsappNumber)),
     );
   }
 
