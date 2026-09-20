@@ -79,6 +79,18 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
     setState(() => _isLoading = true);
 
+    // ⚠️ TEST MODE: මේ number එකෙන් register වෙද්දි real SMS එකක් යවන්නේ නෑ,
+    // OTP එක හැමවෙලේම 123456. Testing ඉවර උනාට පස්සේ මේ block එක අයින් කරන්න.
+    if (_normalizedPhone == '0758405564') {
+      _generatedOtp = '123456';
+      setState(() {
+        _otpSent = true;
+        _isLoading = false;
+      });
+      _showSnack('TEST MODE: OTP එක 123456 ලෙස set කර ඇත (SMS එකක් නෑ)', Colors.orange);
+      return;
+    }
+
     // 6-digit OTP එකක් generate කිරීම
     _generatedOtp = (100000 + Random().nextInt(900000)).toString();
 
