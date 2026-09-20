@@ -1,168 +1,146 @@
-import 'dart:io';
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
-import 'package:csv/csv.dart';
-import 'package:path_provider/path_provider.dart';
+#!/usr/bin/env bash
 
-class DatabaseHelper {
-  static final DatabaseHelper instance = DatabaseHelper._init();
-  static Database? _database;
+# Flutter project එකට නැතිවුණු android ෆෝල්ඩරය නැවත සාදා ගැනීම
+flutter create . --platforms=android
+flutter pub get
+flutter build appbundle --release
+flutter build apk --release
+Recreating project ....
+  swiftdrop_courier.iml (created)
+  .gitignore (created)
+  android/app/src/profile/AndroidManifest.xml (created)
+  android/app/src/main/res/mipmap-mdpi/ic_launcher.png (created)
+  android/app/src/main/res/mipmap-hdpi/ic_launcher.png (created)
+  android/app/src/main/res/drawable/launch_background.xml (created)
+  android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png (created)
+  android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png (created)
+  android/app/src/main/res/values-night/styles.xml (created)
+  android/app/src/main/res/values/styles.xml (created)
+  android/app/src/main/res/drawable-v21/launch_background.xml (created)
+  android/app/src/main/res/mipmap-xhdpi/ic_launcher.png (created)
+  android/app/src/debug/AndroidManifest.xml (created)
+  android/settings.gradle.kts (created)
+  android/gradle/wrapper/gradle-wrapper.properties (created)
+  android/gradle.properties (created)
+  android/.gitignore (created)
+  android/build.gradle.kts (created)
+  android/app/build.gradle.kts (created)
+  android/app/src/main/kotlin/com/example/swiftdrop_courier/MainActivity.kt (created)
+  android/swiftdrop_courier_android.iml (created)
+  analysis_options.yaml (created)
+  .idea/runConfigurations/main_dart.xml (created)
+  .idea/libraries/Dart_SDK.xml (created)
+  .idea/libraries/KotlinJavaRuntime.xml (created)
+  .idea/modules.xml (created)
+  .idea/workspace.xml (created)
+  test/widget_test.dart (created)
+Resolving dependencies...
+Downloading packages...
+Got dependencies.
+Wrote 31 files.
 
-  DatabaseHelper._init();
+All done!
+You can find general documentation for Flutter at: https://docs.flutter.dev/
+Detailed API documentation is available at: https://api.flutter.dev/
+If you prefer video documentation, consider: https://www.youtube.com/c/flutterdev
 
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDB('shiftdrop_v2.db');
-    return _database!;
-  }
+In order to run your application, type:
 
-  Future<Database> _initDB(String filePath) async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, filePath);
-    return await openDatabase(
-      path,
-      version: 3,
-      onCreate: _createDB,
-      onUpgrade: _upgradeDB,
-    );
-  }
+  $ flutter run
 
-  Future _createDB(Database db, int version) async {
-    const idType = 'INTEGER PRIMARY KEY AUTOINCREMENT';
-    const textType = 'TEXT NOT NULL';
-    const textTypeNull = 'TEXT';
-    const integerType = 'INTEGER NOT NULL';
-    const integerTypeNull = 'INTEGER';
+Your application code is in ./lib/main.dart.
 
-    await db.execute('''
-      CREATE TABLE deliveries (
-        id $idType,
-        billNumber $textTypeNull,
-        itemName $textTypeNull,
-        customerName $textType,
-        address $textType,
-        phone $textType,
-        codAmount $textType,
-        status $textType,         
-        callAttempts $integerType,
-        rescheduledDate $integerTypeNull, 
-        notes $textTypeNull,      
-        timestamp $integerType,
-        routeOrder $integerTypeNull
-      )
-    ''');
-  }
+Resolving dependencies...
+Downloading packages...
+  code_assets 1.2.1 (2.1.0 available)
+  csv 6.0.0 (8.0.0 available)
+  flutter_lints 4.0.0 (6.0.0 available)
+  geolocator 10.1.1 (14.0.3 available)
+  geolocator_android 4.6.2 (5.0.3 available)
+  geolocator_web 2.2.1 (4.1.4 available)
+  hooks 2.0.2 (2.2.0 available)
+  lints 4.0.0 (6.1.0 available)
+  material_color_utilities 0.13.0 (0.13.1 available)
+  meta 1.18.3 (1.19.0 available)
+  objective_c 9.5.0 (9.6.0 available)
+  permission_handler 11.4.0 (13.0.2 available)
+  permission_handler_android 12.1.0 (14.1.0 available)
+  qr 3.0.2 (4.0.0 available)
+  record_use 0.6.0 (1.1.1 available)
+  test_api 0.7.12 (0.7.14 available)
+  vector_math 2.4.0 (2.4.3 available)
+Got dependencies!
+17 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Running Gradle task 'bundleRelease'...                          
+Checking the license for package Android SDK Platform 36 in /usr/local/share/android-sdk/licenses
+License for package Android SDK Platform 36 accepted.
+Preparing "Install Android SDK Platform 36 (revision 2)".
+"Install Android SDK Platform 36 (revision 2)" ready.
+Installing Android SDK Platform 36 in /usr/local/share/android-sdk/platforms/android-36
+"Install Android SDK Platform 36 (revision 2)" complete.
+"Install Android SDK Platform 36 (revision 2)" finished.
+lib/main.dart:170:83: Error: 'SmartScannerScreen' is imported from both 'package:swiftdrop_courier/pending_calls_screen.dart' and 'package:swiftdrop_courier/smart_scanner_screen.dart'.
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const SmartScannerScreen()));
+                                                                                  ^^^^^^^^^^^^^^^^^^
+lib/main.dart:180:83: Error: Not a constant expression.
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const PendingCallsScreen()));
+                                                                                  ^^^^^^^^^^^^^^^^^^
+lib/route_list_screen.dart:114:32: Error: The method 'updateDeliveryDetails' isn't defined for the type 'DatabaseHelper'.
+ - 'DatabaseHelper' is from 'package:swiftdrop_courier/database_helper.dart' ('lib/database_helper.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'updateDeliveryDetails'.
+                await dbHelper.updateDeliveryDetails(item['id'] as int, {
+                               ^^^^^^^^^^^^^^^^^^^^^
+Target kernel_snapshot_program failed: Exception
 
-  // Existing users ට (පරණ Database එකක් තියෙන අයට) අලුත් column එක auto add කිරීම
-  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 3) {
-      await db.execute('ALTER TABLE deliveries ADD COLUMN routeOrder INTEGER');
-    }
-  }
 
-  Future<void> insertDelivery(Map<String, dynamic> deliveryData) async {
-    final db = await instance.database;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    deliveryData['timestamp'] = now;
-    deliveryData['status'] = 'pending';
-    deliveryData['callAttempts'] = 0;
-    // අලුතින් එකතු කරන Parcel එක route එකේ අන්තිමට යන්න routeOrder එක timestamp එකෙන්ම set කිරීම
-    deliveryData['routeOrder'] = now;
-    await db.insert('deliveries', deliveryData);
-  }
+FAILURE: Build failed with an exception.
 
-  Future<List<Map<String, dynamic>>> getMorningCalls() async {
-    final db = await instance.database;
-    final now = DateTime.now();
-    final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59).millisecondsSinceEpoch;
-    return await db.query(
-      'deliveries',
-      where: '(status = ? OR status = ?) AND (rescheduledDate IS NULL OR rescheduledDate <= ?)',
-      whereArgs: ['pending', 'rescheduled', endOfToday],
-      orderBy: 'callAttempts DESC, timestamp ASC', 
-    );
-  }
+* What went wrong:
+Execution failed for task ':app:compileFlutterBuildRelease'.
+> Process 'command '/Users/builder/programs/flutter/bin/flutter'' finished with non-zero exit value 1
 
-  // Route screen එකේ, User විසින් manual ලෙස set කරපු පිළිවෙලට (routeOrder) Confirmed Deliveries ලබා ගැනීම
-  Future<List<Map<String, dynamic>>> getConfirmedDeliveries() async {
-    final db = await instance.database;
-    return await db.query(
-      'deliveries',
-      where: 'status = ?',
-      whereArgs: ['confirmed'],
-      orderBy: 'routeOrder ASC, timestamp ASC',
-    );
-  }
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
 
-  // Report screen එකේ Filter/Select කිරීම සඳහා bills/deliveries ඔක්කොම ලබා ගැනීම
-  Future<List<Map<String, dynamic>>> getAllDeliveries() async {
-    final db = await instance.database;
-    return await db.query('deliveries', orderBy: 'timestamp DESC');
-  }
+BUILD FAILED in 2m 26s
+[=========                              ] 25%                                   
+Running Gradle task 'bundleRelease'...                            147.4s
+Gradle task bundleRelease failed with exit code 1
+Running Gradle task 'assembleRelease'...                        
+lib/main.dart:170:83: Error: 'SmartScannerScreen' is imported from both 'package:swiftdrop_courier/pending_calls_screen.dart' and 'package:swiftdrop_courier/smart_scanner_screen.dart'.
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const SmartScannerScreen()));
+                                                                                  ^^^^^^^^^^^^^^^^^^
+lib/main.dart:180:83: Error: Not a constant expression.
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const PendingCallsScreen()));
+                                                                                  ^^^^^^^^^^^^^^^^^^
+lib/route_list_screen.dart:114:32: Error: The method 'updateDeliveryDetails' isn't defined for the type 'DatabaseHelper'.
+ - 'DatabaseHelper' is from 'package:swiftdrop_courier/database_helper.dart' ('lib/database_helper.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'updateDeliveryDetails'.
+                await dbHelper.updateDeliveryDetails(item['id'] as int, {
+                               ^^^^^^^^^^^^^^^^^^^^^
+Target kernel_snapshot_program failed: Exception
 
-  Future<int> updateDeliveryStatus(int id, String status, int attempts) async {
-    final db = await instance.database;
-    return await db.update('deliveries', {'status': status, 'callAttempts': attempts}, where: 'id = ?', whereArgs: [id]);
-  }
 
-  Future<int> rescheduleDelivery(int id, int newDateEpoch, String note) async {
-    final db = await instance.database;
-    return await db.update('deliveries', {'status': 'rescheduled', 'rescheduledDate': newDateEpoch, 'notes': note}, where: 'id = ?', whereArgs: [id]);
-  }
+FAILURE: Build failed with an exception.
 
-  // Route screen එකේ User Drag කරලා හදන අලුත් Manual Order එක Database එකට Save කිරීම
-  Future<void> updateRouteOrder(List<int> orderedIds) async {
-    final db = await instance.database;
-    final batch = db.batch();
-    for (int i = 0; i < orderedIds.length; i++) {
-      batch.update('deliveries', {'routeOrder': i}, where: 'id = ?', whereArgs: [orderedIds[i]]);
-    }
-    await batch.commit(noResult: true);
-  }
+* What went wrong:
+Execution failed for task ':app:compileFlutterBuildRelease'.
+> Process 'command '/Users/builder/programs/flutter/bin/flutter'' finished with non-zero exit value 1
 
-  // අලුතින් එකතු කළ කේතය: End of Day Report එක සඳහා දත්ත ලබා ගැනීම
-  Future<Map<String, dynamic>> getDailyReportSummary() async {
-    final db = await instance.database;
-    
-    final delivered = await db.query('deliveries', where: 'status = ?', whereArgs: ['delivered']);
-    final returned = await db.query('deliveries', where: 'status = ?', whereArgs: ['returned']);
-    final pending = await db.query('deliveries', where: 'status = ? OR status = ?', whereArgs: ['pending', 'rescheduled']);
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
 
-    double totalCod = 0;
-    for (var item in delivered) {
-      // අකුරු හෝ රුපියල් සලකුණු තිබුණොත් ඒවා අයින් කරලා ගාණ විතරක් එකතු කිරීම
-      String codStr = item['codAmount'].toString().replaceAll(RegExp(r'[^0-9.]'), '');
-      if (codStr.isNotEmpty) {
-        totalCod += double.tryParse(codStr) ?? 0;
-      }
-    }
+BUILD FAILED in 7s
+Running Gradle task 'assembleRelease'...                            8.0s
+Gradle task assembleRelease failed with exit code 1
 
-    return {
-      'deliveredCount': delivered.length,
-      'returnedCount': returned.length,
-      'pendingCount': pending.length,
-      'totalCod': totalCod,
-      'deliveredList': delivered,
-      'returnedList': returned,
-    };
-  }
 
-  Future<void> backupAndCleanOldData() async {
-    final db = await instance.database;
-    final fourteenDaysAgo = DateTime.now().subtract(const Duration(days: 14)).millisecondsSinceEpoch;
-    final oldData = await db.query('deliveries', where: 'timestamp < ?', whereArgs: [fourteenDaysAgo]);
-    if (oldData.isEmpty) return;
-    List<List<dynamic>> csvData = [['Bill No', 'Item', 'Customer Name', 'Address', 'Phone', 'COD', 'Status', 'Attempts', 'Notes']];
-    for (var row in oldData) {
-      csvData.add([row['billNumber'], row['itemName'], row['customerName'], row['address'], row['phone'], row['codAmount'], row['status'], row['callAttempts'], row['notes']]);
-    }
-    String csvString = const ListToCsvConverter().convert(csvData);
-    Directory? directory = await getExternalStorageDirectory();
-    if (directory != null) {
-      String filePath = '${directory.path}/ShiftDrop_Backup_${DateTime.now().millisecondsSinceEpoch}.csv';
-      File file = File(filePath);
-      await file.writeAsString(csvString);
-    }
-    await db.delete('deliveries', where: 'timestamp < ?', whereArgs: [fourteenDaysAgo]);
-  }
-}
+Build failed :|
+Step 3 script `Create Android Native Files and Build` exited with status code 1
