@@ -19,7 +19,12 @@ class DatabaseHelper {
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
-    return await openDatabase(path, version: 2, onCreate: _createDB);
+    return await openDatabase(
+      path,
+      version: 3,
+      onCreate: _createDB,
+      onUpgrade: _upgradeDB,
+    );
   }
 
   Future _createDB(Database db, int version) async {
@@ -42,16 +47,27 @@ class DatabaseHelper {
         callAttempts $integerType,
         rescheduledDate $integerTypeNull, 
         notes $textTypeNull,      
-        timestamp $integerType
+        timestamp $integerType,
+        routeOrder $integerTypeNull
       )
     ''');
   }
 
+  // Existing users ට (පරණ Database එකක් තියෙන අයට) අලුත් column එක auto add කිරීම
+  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE deliveries ADD COLUMN routeOrder INTEGER');
+    }
+  }
+
   Future<void> insertDelivery(Map<String, dynamic> deliveryData) async {
     final db = await instance.database;
-    deliveryData['timestamp'] = DateTime.now().millisecondsSinceEpoch;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    deliveryData['timestamp'] = now;
     deliveryData['status'] = 'pending';
     deliveryData['callAttempts'] = 0;
+    // අලුතින් එකතු කරන Parcel එක route එකේ අන්තිමට යන්න routeOrder එක timestamp එකෙන්ම set කිරීම
+    deliveryData['routeOrder'] = now;
     await db.insert('deliveries', deliveryData);
   }
 
@@ -67,9 +83,15 @@ class DatabaseHelper {
     );
   }
 
+  // Route screen එකේ, User විසින් manual ලෙස set කරපු පිළිවෙලට (routeOrder) Confirmed Deliveries ලබා ගැනීම
   Future<List<Map<String, dynamic>>> getConfirmedDeliveries() async {
     final db = await instance.database;
-    return await db.query('deliveries', where: 'status = ?', whereArgs: ['confirmed'], orderBy: 'timestamp ASC');
+    return await db.query(
+      'deliveries',
+      where: 'status = ?',
+      whereArgs: ['confirmed'],
+      orderBy: 'routeOrder ASC, timestamp ASC',
+    );
   }
 
   // Report screen එකේ Filter/Select කිරීම සඳහා bills/deliveries ඔක්කොම ලබා ගැනීම
@@ -86,6 +108,16 @@ class DatabaseHelper {
   Future<int> rescheduleDelivery(int id, int newDateEpoch, String note) async {
     final db = await instance.database;
     return await db.update('deliveries', {'status': 'rescheduled', 'rescheduledDate': newDateEpoch, 'notes': note}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  // Route screen එකේ User Drag කරලා හදන අලුත් Manual Order එක Database එකට Save කිරීම
+  Future<void> updateRouteOrder(List<int> orderedIds) async {
+    final db = await instance.database;
+    final batch = db.batch();
+    for (int i = 0; i < orderedIds.length; i++) {
+      batch.update('deliveries', {'routeOrder': i}, where: 'id = ?', whereArgs: [orderedIds[i]]);
+    }
+    await batch.commit(noResult: true);
   }
 
   // අලුතින් එකතු කළ කේතය: End of Day Report එක සඳහා දත්ත ලබා ගැනීම
