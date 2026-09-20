@@ -3,6 +3,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'database_helper.dart';
+import 'smart_scanner_screen.dart';
 
 class EndOfDayReportScreen extends StatefulWidget {
   const EndOfDayReportScreen({super.key});
@@ -34,6 +35,14 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
       _allDeliveries = data;
       _isLoading = false;
     });
+  }
+
+  Future<void> _editDelivery(Map<String, dynamic> item) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => SmartScannerScreen(deliveryToEdit: item)),
+    );
+    if (result == true) _loadDeliveries();
   }
 
   List<Map<String, dynamic>> get _filteredDeliveries {
@@ -188,22 +197,49 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
                             final d = filtered[index];
                             final id = d['id'] as int;
                             final isSelected = _selectedIds.contains(id);
-                            return CheckboxListTile(
-                              value: isSelected,
-                              onChanged: (checked) {
+                            final phone2 = (d['phone2'] ?? '').toString();
+                            return ListTile(
+                              leading: Checkbox(
+                                value: isSelected,
+                                onChanged: (checked) {
+                                  setState(() {
+                                    if (checked == true) {
+                                      _selectedIds.add(id);
+                                    } else {
+                                      _selectedIds.remove(id);
+                                    }
+                                  });
+                                },
+                              ),
+                              title: Text('${d['customerName'] ?? ''}  •  Bill: ${d['billNumber'] ?? '-'}',
+                                  style: const TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: Text(
+                                '${d['address'] ?? ''}\nPhone: ${d['phone'] ?? ''}${phone2.isNotEmpty ? ', $phone2' : ''}  •  COD: Rs. ${d['codAmount'] ?? '0'}',
+                              ),
+                              isThreeLine: true,
+                              trailing: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _statusBadge((d['status'] ?? 'pending').toString()),
+                                  IconButton(
+                                    icon: const Icon(Icons.edit, size: 18, color: Colors.grey),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () => _editDelivery(d),
+                                    tooltip: 'Edit',
+                                  ),
+                                ],
+                              ),
+                              onTap: () {
                                 setState(() {
-                                  if (checked == true) {
-                                    _selectedIds.add(id);
-                                  } else {
+                                  if (isSelected) {
                                     _selectedIds.remove(id);
+                                  } else {
+                                    _selectedIds.add(id);
                                   }
                                 });
                               },
-                              title: Text('${d['customerName'] ?? ''}  •  Bill: ${d['billNumber'] ?? '-'}',
-                                  style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text('${d['address'] ?? ''}\nPhone: ${d['phone'] ?? ''}  •  COD: Rs. ${d['codAmount'] ?? '0'}'),
-                              isThreeLine: true,
-                              secondary: _statusBadge((d['status'] ?? 'pending').toString()),
                             );
                           },
                         ),
