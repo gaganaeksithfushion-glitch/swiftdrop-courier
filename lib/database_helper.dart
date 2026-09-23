@@ -120,6 +120,12 @@ class DatabaseHelper {
     return await db.update('deliveries', {'status': 'rescheduled', 'rescheduledDate': newDateEpoch, 'notes': note}, where: 'id = ?', whereArgs: [id]);
   }
 
+  // Pending Calls Screen එකේ Note එක වෙන වෙනම Add/Edit කිරීම සඳහා
+  Future<int> updateNote(int id, String note) async {
+    final db = await instance.database;
+    return await db.update('deliveries', {'notes': note}, where: 'id = ?', whereArgs: [id]);
+  }
+
   // Route screen එකේ User Drag කරලා හදන අලුත් Manual Order එක Database එකට Save කිරීම
   Future<void> updateRouteOrder(List<int> orderedIds) async {
     final db = await instance.database;
