@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:geolocator/geolocator.dart';
 import 'database_helper.dart';
 import 'smart_scanner_screen.dart';
+import 'google_places_service.dart';
 
 class RouteListScreen extends StatefulWidget {
   const RouteListScreen({super.key});
@@ -14,6 +16,7 @@ class _RouteListScreenState extends State<RouteListScreen> {
   final DatabaseHelper dbHelper = DatabaseHelper.instance;
   List<Map<String, dynamic>> deliveries = [];
   bool _isLoading = true;
+  bool _isOptimizing = false;
 
   @override
   void initState() {
@@ -79,14 +82,91 @@ class _RouteListScreenState extends State<RouteListScreen> {
     await dbHelper.updateRouteOrder(orderedIds);
   }
 
-  // "Auto Order by Location" - තාම හදලා නෑ, Premium feature එකක් විදිහට Tease කිරීම
-  void _showAutoOrderComingSoon() {
+  Future<Position?> _getCurrentPosition() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('GPS එක Off වෙලා තියෙන්නේ, කරුණාකර On කරන්න!'), backgroundColor: Colors.orange),
+        );
+      }
+      return null;
+    }
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return null;
+    }
+    if (permission == LocationPermission.deniedForever) return null;
+    return await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+  }
+
+  // Real "Auto Order by Location" - Google Directions API එකෙන් Best Route එක Calculate කිරීම
+  Future<void> _autoOrderByLocation() async {
+    if (!GooglePlacesService.isConfigured) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Google API Key එක Configure වෙලා නෑ. Build කරද්දි --dart-define=GOOGLE_API_KEY එකතු කරන්න.'),
+          backgroundColor: Colors.deepPurple,
+        ),
+      );
+      return;
+    }
+
+    // Location (lat/lng) Save වෙලා තියෙන Deliveries විතරක්, Auto-Order එකට ඇතුළත් කරගන්න පුළුවන්
+    final withLocation = deliveries.where((d) => d['lat'] != null && d['lng'] != null).toList();
+    final withoutLocation = deliveries.where((d) => d['lat'] == null || d['lng'] == null).toList();
+
+    if (withLocation.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('අඩුම තරමින් Location Saved Delivery 2ක්වත් ඕන. Address Autocomplete එකෙන් Address එක Select කරලා Save කරන්න.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isOptimizing = true);
+
+    final position = await _getCurrentPosition();
+    if (position == null) {
+      setState(() => _isOptimizing = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Current Location එක ලබාගන්න බැරි උනා. Permission එක Check කරන්න.'), backgroundColor: Colors.red),
+        );
+      }
+      return;
+    }
+
+    final origin = LatLngResult(position.latitude, position.longitude);
+    final waypoints = withLocation.map((d) => LatLngResult((d['lat'] as num).toDouble(), (d['lng'] as num).toDouble())).toList();
+
+    final optimizedOrder = await GooglePlacesService.optimizeRoute(origin: origin, waypoints: waypoints);
+
+    setState(() => _isOptimizing = false);
+
+    if (optimizedOrder == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Route Optimize කරන්න බැරි උනා. API Key එකේ Directions API Enable කරලා තියෙනවද බලන්න.'), backgroundColor: Colors.red),
+        );
+      }
+      return;
+    }
+
+    // Optimized Order එක අනුව List එක නැවත සකස් කිරීම, Location නැති ඒවා අන්තිමට එකතු කිරීම
+    final reordered = optimizedOrder.map((i) => withLocation[i]).toList();
+    reordered.addAll(withoutLocation);
+
+    setState(() => deliveries = reordered);
+    final orderedIds = deliveries.map((d) => d['id'] as int).toList();
+    await dbHelper.updateRouteOrder(orderedIds);
+
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('🚧 Auto Order by Location (GPS) මේක Premium version එකේ පමණයි Activate වෙන්නේ!'),
-        backgroundColor: Colors.deepPurple,
-        duration: Duration(seconds: 3),
-      ),
+      const SnackBar(content: Text('✅ Route එක GPS Location එක අනුව Auto-Arrange කළා!'), backgroundColor: Colors.green),
     );
   }
 
@@ -209,8 +289,10 @@ class _RouteListScreenState extends State<RouteListScreen> {
         title: const Text('Route Map & Deliveries'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.auto_awesome),
-            onPressed: _showAutoOrderComingSoon,
+            icon: _isOptimizing
+                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.auto_awesome),
+            onPressed: _isOptimizing ? null : _autoOrderByLocation,
             tooltip: 'Auto Order by Location',
           ),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _loadDeliveries, tooltip: 'Refresh'),
@@ -232,7 +314,7 @@ class _RouteListScreenState extends State<RouteListScreen> {
                           SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                              'Order වෙනස් කරන්න - handle එක (☰) ටිකක් Hold කරලා ඇද ගන්න.',
+                              'Order වෙනස් කරන්න - handle එක (☰) ටිකක් Hold කරලා ඇද ගන්න, හෝ ✨ Auto Order Button එක try කරන්න.',
                               style: TextStyle(fontSize: 12, color: Colors.grey),
                             ),
                           ),
@@ -255,6 +337,7 @@ class _RouteListScreenState extends State<RouteListScreen> {
                           final phone2 = (item['phone2'] ?? '').toString();
                           final customerName = (item['customerName'] ?? '').toString();
                           final id = item['id'] as int;
+                          final hasLocation = item['lat'] != null && item['lng'] != null;
 
                           return Card(
                             key: ValueKey(id),
@@ -267,8 +350,6 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                   Row(
                                     children: [
                                       // Drag Handle - "Delayed" listener එකක් නිසා ටිකක් Hold කරලා ඇදගෙන යන්න ඕන.
-                                      // (Immediate drag listener එකෙන් List එකේ Scroll Gesture එකත් සමග Conflict වෙලා,
-                                      // දුර ඉඳලා ඇදගෙන ආවම Drop එකේදී ආපහු පරණ තැනටම යනවා - ඒක Fix කිරීමට මෙය කරන ලදී)
                                       ReorderableDelayedDragStartListener(
                                         index: index,
                                         child: Container(
@@ -298,9 +379,20 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                       ),
                                       const SizedBox(width: 10),
                                       Expanded(
-                                        child: Text(
-                                          customerName,
-                                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                        child: Row(
+                                          children: [
+                                            Flexible(
+                                              child: Text(
+                                                customerName,
+                                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            if (hasLocation) const Padding(
+                                              padding: EdgeInsets.only(left: 4),
+                                              child: Icon(Icons.gps_fixed, size: 13, color: Colors.green),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                       IconButton(
