@@ -232,7 +232,7 @@ class _RouteListScreenState extends State<RouteListScreen> {
                           SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                              'Order එක වෙනස් කරන්න, පහළ ඉන්න drag handle එක අල්ලාගෙන Card එක ඉහළට/පහළට ඇද ගන්න.',
+                              'Order වෙනස් කරන්න - handle එක (☰) ටිකක් Hold කරලා ඇද ගන්න.',
                               style: TextStyle(fontSize: 12, color: Colors.grey),
                             ),
                           ),
@@ -266,15 +266,23 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                 children: [
                                   Row(
                                     children: [
-                                      // Drag Handle - මේකෙන් අල්ලාගෙනයි Card එක ඇදගෙන යන්නේ
-                                      ReorderableDragStartListener(
+                                      // Drag Handle - "Delayed" listener එකක් නිසා ටිකක් Hold කරලා ඇදගෙන යන්න ඕන.
+                                      // (Immediate drag listener එකෙන් List එකේ Scroll Gesture එකත් සමග Conflict වෙලා,
+                                      // දුර ඉඳලා ඇදගෙන ආවම Drop එකේදී ආපහු පරණ තැනටම යනවා - ඒක Fix කිරීමට මෙය කරන ලදී)
+                                      ReorderableDelayedDragStartListener(
                                         index: index,
                                         child: Container(
-                                          padding: const EdgeInsets.all(4),
+                                          width: 40,
+                                          height: 40,
+                                          alignment: Alignment.center,
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey.withOpacity(0.08),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
                                           child: const Icon(Icons.drag_handle, color: Colors.grey),
                                         ),
                                       ),
-                                      const SizedBox(width: 4),
+                                      const SizedBox(width: 6),
                                       Container(
                                         width: 26,
                                         height: 26,
@@ -316,13 +324,13 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                   if (billNo.isNotEmpty) ...[
                                     const SizedBox(height: 2),
                                     Padding(
-                                      padding: const EdgeInsets.only(left: 40),
+                                      padding: const EdgeInsets.only(left: 46),
                                       child: Text('Bill No: $billNo', style: const TextStyle(color: Colors.grey, fontSize: 13)),
                                     ),
                                   ],
                                   const SizedBox(height: 8),
                                   Padding(
-                                    padding: const EdgeInsets.only(left: 40),
+                                    padding: const EdgeInsets.only(left: 46),
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
