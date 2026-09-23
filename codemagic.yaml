@@ -5,14 +5,19 @@ workflows:
     max_build_duration: 60
     environment:
       flutter: stable
+      groups:
+        # ⚠️ Codemagic UI එකේ (App Settings > Environment variables) "google_api" කියලා Group
+        # එකක් හදලා, GOOGLE_API_KEY කියලා Variable එකක් "Secure" ලෙස Mark කරලා Add කරන්න.
+        # Key එක Codemagic UI එකේ Encrypted ලෙසයි Save වෙන්නේ, මේ file එකේ Plain Text එකෙන් නෑ.
+        - google_api
     scripts:
       - name: Create Android Native Files and Build
         script: |
           # Flutter project එකට නැතිවුණු android ෆෝල්ඩරය නැවත සාදා ගැනීම
           flutter create . --platforms=android
           flutter pub get
-          flutter build appbundle --release
-          flutter build apk --release
+          flutter build appbundle --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
+          flutter build apk --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
     artifacts:
       - build/app/outputs/**/*.aab
       - build/app/outputs/**/*.apk
