@@ -65,6 +65,17 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
     return template;
   }
 
+  // Sri Lankan local format (07XXXXXXXX) එක WhatsApp ට ඕන International format (94XXXXXXXXX) එකට convert කිරීම
+  // wa.me links වැඩ කරන්නේ මේ format එකෙන් විතරයි - නැත්නම් Number එකට කෙළින්ම Chat එක open වෙන්නේ නැතුව
+  // WhatsApp එකේ Contact Picker / Home Screen එකට Fallback වෙනවා
+  String _toWhatsAppFormat(String phone) {
+    String p = phone.trim().replaceAll(' ', '').replaceAll('-', '');
+    if (p.startsWith('+94')) return p.substring(1);
+    if (p.startsWith('94') && p.length == 11) return p;
+    if (p.startsWith('0')) return '94${p.substring(1)}';
+    return p;
+  }
+
   // GPS හරහා Current Location එක ලබාගෙන Google Maps Link එකක් හදාගැනීම
   Future<String?> _getLocationLink(BuildContext dialogContext) async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -106,7 +117,7 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
     final phone1 = (item['phone'] ?? '').toString();
     final phone2 = (item['phone2'] ?? '').toString();
     final messageController = TextEditingController(text: await _buildMessage(item));
-    String selectedPhone = phone1;
+    String selectedPhone = phone1.isNotEmpty ? phone1 : phone2;
     bool isFetchingLocation = false;
 
     await showDialog(
@@ -171,7 +182,7 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
                   onPressed: () async {
                     // WhatsApp නැතුව Confirm විතරක් කරන්න ඕන අයට
                     Navigator.pop(dialogContext);
-                    await _confirmStatusOnly(item);
+                    await _updateStatus(item, 'confirmed');
                   },
                   child: const Text('Skip & Just Confirm'),
                 ),
@@ -195,7 +206,7 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
   }
 
   Future<void> _sendWhatsAppAndConfirm(Map<String, dynamic> item, String phone, String message) async {
-    final formattedPhone = phone.replaceAll('+', '').replaceAll(' ', '');
+    final formattedPhone = _toWhatsAppFormat(phone);
     final encodedMessage = Uri.encodeComponent(message);
     final Uri whatsappUri = Uri.parse('https://wa.me/$formattedPhone?text=$encodedMessage');
 
@@ -208,10 +219,6 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
         );
       }
     }
-    await _updateStatus(item, 'confirmed');
-  }
-
-  Future<void> _confirmStatusOnly(Map<String, dynamic> item) async {
     await _updateStatus(item, 'confirmed');
   }
 
@@ -228,6 +235,41 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
       ),
     );
     _loadPendingCalls();
+  }
+
+  // Call Attempt Note එකක් Add/Edit කිරීම - Card එකේ පහළින්ම පේනවා
+  Future<void> _showNoteDialog(Map<String, dynamic> item) async {
+    final noteController = TextEditingController(text: (item['notes'] ?? '').toString());
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Call Note එකතු කරන්න'),
+          content: TextField(
+            controller: noteController,
+            maxLines: 4,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'උදා: නෑ, Phone එක Off, හෙට Call කරන්න කිව්වා...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () async {
+                await dbHelper.updateNote(item['id'] as int, noteController.text);
+                if (!dialogContext.mounted) return;
+                Navigator.pop(dialogContext);
+                _loadPendingCalls();
+              },
+              child: const Text('Save Note'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   // Dialer-style Tappable Phone Number Row එකක්
@@ -250,6 +292,22 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
         ),
       ),
     );
+  }
+
+  // Call Attempts ගාණ අනුව Card එකේ Color එක තීරණය කිරීම
+  // 1 වෙනි No Answer - Yellow, 2 වෙනි - Orange, 3+ - Red
+  Color _cardColorForAttempts(int attempts) {
+    if (attempts >= 3) return Colors.red.withOpacity(0.14);
+    if (attempts == 2) return Colors.orange.withOpacity(0.16);
+    if (attempts == 1) return Colors.yellow.withOpacity(0.28);
+    return Colors.white;
+  }
+
+  Color _attemptsTextColor(int attempts) {
+    if (attempts >= 3) return Colors.red[800]!;
+    if (attempts == 2) return Colors.orange[800]!;
+    if (attempts == 1) return Colors.amber[900]!;
+    return Colors.grey;
   }
 
   @override
@@ -276,8 +334,11 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
                     final address = (call['address'] ?? '').toString();
                     final itemName = (call['itemName'] ?? 'Parcel').toString();
                     final codAmount = (call['codAmount'] ?? '0').toString();
+                    final attempts = (call['callAttempts'] ?? 0) as int;
+                    final note = (call['notes'] ?? '').toString();
 
                     return Card(
+                      color: _cardColorForAttempts(attempts),
                       margin: const EdgeInsets.only(bottom: 12.0),
                       child: Padding(
                         padding: const EdgeInsets.all(12.0),
@@ -289,6 +350,18 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
                                 Expanded(
                                   child: Text(name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                                 ),
+                                if (attempts > 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: _attemptsTextColor(attempts).withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      'Attempts: $attempts',
+                                      style: TextStyle(color: _attemptsTextColor(attempts), fontWeight: FontWeight.bold, fontSize: 12),
+                                    ),
+                                  ),
                                 IconButton(
                                   icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
                                   onPressed: () => _editDelivery(call),
@@ -302,7 +375,7 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
                             const SizedBox(height: 4),
                             _phoneRow(phone1, color: Colors.blue),
                             _phoneRow(phone2, color: Colors.indigo),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 8),
                             Row(
                               children: [
                                 IconButton(
@@ -312,6 +385,11 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
                                     await _sendWhatsAppAndConfirm(call, phone1.isNotEmpty ? phone1 : phone2, msg);
                                   },
                                   tooltip: 'Quick WhatsApp',
+                                ),
+                                IconButton(
+                                  icon: Icon(Icons.note_add_outlined, color: note.isNotEmpty ? Colors.deepPurple : Colors.grey),
+                                  onPressed: () => _showNoteDialog(call),
+                                  tooltip: 'Add Note',
                                 ),
                                 const Spacer(),
                                 TextButton(
@@ -325,6 +403,23 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
                                 ),
                               ],
                             ),
+                            // Note එකක් Save කරලා තියෙනවා නම් Card එකේ පහළින්ම පෙන්නනවා
+                            if (note.isNotEmpty) ...[
+                              const Divider(height: 16),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(Icons.sticky_note_2_outlined, size: 16, color: Colors.deepPurple),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      note,
+                                      style: const TextStyle(fontSize: 13, color: Colors.deepPurple, fontStyle: FontStyle.italic),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
                       ),
