@@ -21,7 +21,7 @@ class DatabaseHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -33,6 +33,7 @@ class DatabaseHelper {
     const textTypeNull = 'TEXT';
     const integerType = 'INTEGER NOT NULL';
     const integerTypeNull = 'INTEGER';
+    const realTypeNull = 'REAL';
 
     await db.execute('''
       CREATE TABLE deliveries (
@@ -49,7 +50,9 @@ class DatabaseHelper {
         rescheduledDate $integerTypeNull, 
         notes $textTypeNull,      
         timestamp $integerType,
-        routeOrder $integerTypeNull
+        routeOrder $integerTypeNull,
+        lat $realTypeNull,
+        lng $realTypeNull
       )
     ''');
   }
@@ -61,6 +64,10 @@ class DatabaseHelper {
     }
     if (oldVersion < 4) {
       await db.execute('ALTER TABLE deliveries ADD COLUMN phone2 TEXT');
+    }
+    if (oldVersion < 5) {
+      await db.execute('ALTER TABLE deliveries ADD COLUMN lat REAL');
+      await db.execute('ALTER TABLE deliveries ADD COLUMN lng REAL');
     }
   }
 
@@ -126,7 +133,7 @@ class DatabaseHelper {
     return await db.update('deliveries', {'notes': note}, where: 'id = ?', whereArgs: [id]);
   }
 
-  // Route screen එකේ User Drag කරලා හදන අලුත් Manual Order එක Database එකට Save කිරීම
+  // Route screen එකේ User Drag කරලා (හෝ Auto-Order කරලා) හදන අලුත් Order එක Database එකට Save කිරීම
   Future<void> updateRouteOrder(List<int> orderedIds) async {
     final db = await instance.database;
     final batch = db.batch();
