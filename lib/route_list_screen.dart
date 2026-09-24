@@ -1,343 +1,588 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:geolocator/geolocator.dart';
 import 'database_helper.dart';
+import 'smart_scanner_screen.dart';
 import 'google_places_service.dart';
 
-class SmartScannerScreen extends StatefulWidget {
-  // Edit කරන්න ආපු Delivery record එක (null නම් අලුත් Entry එකක්)
-  final Map<String, dynamic>? deliveryToEdit;
-
-  const SmartScannerScreen({super.key, this.deliveryToEdit});
+class RouteListScreen extends StatefulWidget {
+  const RouteListScreen({super.key});
 
   @override
-  State<SmartScannerScreen> createState() => _SmartScannerScreenState();
+  State<RouteListScreen> createState() => _RouteListScreenState();
 }
 
-class _SmartScannerScreenState extends State<SmartScannerScreen> {
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _billNoController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _phone2Controller = TextEditingController();
-  final TextEditingController _addressController = TextEditingController();
-  final TextEditingController _itemController = TextEditingController();
-  final TextEditingController _codController = TextEditingController();
-
-  bool get _isEditMode => widget.deliveryToEdit != null;
-
-  // Address Autocomplete සඳහා
-  List<PlaceSuggestion> _suggestions = [];
-  Timer? _debounce;
-  double? _lat;
-  double? _lng;
-  bool _isSearchingAddress = false;
-  bool _isSaving = false;
+class _RouteListScreenState extends State<RouteListScreen> {
+  final DatabaseHelper dbHelper = DatabaseHelper.instance;
+  List<Map<String, dynamic>> deliveries = [];
+  DateTimeRange? _selectedRange;
+  bool _isLoading = true;
+  bool _isOptimizing = false;
 
   @override
   void initState() {
     super.initState();
-    // Edit Mode නම්, දැනටම තියෙන Data වලින් Fields පුරවනවා
-    if (_isEditMode) {
-      final d = widget.deliveryToEdit!;
-      _nameController.text = (d['customerName'] ?? '').toString();
-      _billNoController.text = (d['billNumber'] ?? '').toString();
-      _phoneController.text = (d['phone'] ?? '').toString();
-      _phone2Controller.text = (d['phone2'] ?? '').toString();
-      _addressController.text = (d['address'] ?? '').toString();
-      _itemController.text = (d['itemName'] ?? '').toString();
-      _codController.text = (d['codAmount'] ?? '').toString();
-      _lat = (d['lat'] as num?)?.toDouble();
-      _lng = (d['lng'] as num?)?.toDouble();
-    }
+    _loadDeliveries();
   }
 
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _nameController.dispose();
-    _billNoController.dispose();
-    _phoneController.dispose();
-    _phone2Controller.dispose();
-    _addressController.dispose();
-    _itemController.dispose();
-    _codController.dispose();
-    super.dispose();
-  }
-
-  // Address Field එකේ Type කරන විට, 400ms Debounce එකකින් Google Places Search එක Call කිරීම
-  void _onAddressChanged(String value) {
-    // User ආයෙත් Type කරන්න පටන්ගත්තොත් කලින් තෝරපු Location එක Invalid වෙනවා
-    if (_lat != null || _lng != null) {
-      setState(() {
-        _lat = null;
-        _lng = null;
-      });
-    }
-
-    if (!GooglePlacesService.isConfigured) return;
-
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 400), () async {
-      if (value.trim().length < 3) {
-        setState(() => _suggestions = []);
-        return;
-      }
-      setState(() => _isSearchingAddress = true);
-      final results = await GooglePlacesService.autocomplete(value);
-      if (!mounted) return;
-      setState(() {
-        _suggestions = results;
-        _isSearchingAddress = false;
-      });
-    });
-  }
-
-  Future<void> _selectSuggestion(PlaceSuggestion suggestion) async {
-    setState(() {
-      _addressController.text = suggestion.description;
-      _suggestions = [];
-      _isSearchingAddress = true;
-    });
-    final latLng = await GooglePlacesService.getPlaceLatLng(suggestion.placeId);
+  // Database එකෙන් "Confirmed" (Route එකේ තියෙන) Deliveries ටික, User set කරපු පිළිවෙලට load කිරීම
+  Future<void> _loadDeliveries() async {
+    setState(() => _isLoading = true);
+    final data = await dbHelper.getConfirmedDeliveries();
     if (!mounted) return;
     setState(() {
-      _lat = latLng?.lat;
-      _lng = latLng?.lng;
-      _isSearchingAddress = false;
+      deliveries = data;
+      _isLoading = false;
     });
   }
 
-  // Bill No එක දැනටමත් Database එකේ තියෙනවා නම්, Save කරන්නද කියලා Confirm කරගැනීම
-  Future<bool> _confirmDuplicateBillNumber(String billNo) async {
-    final result = await showDialog<bool>(
+  // User Select කරපු Date Range එකට අනුව List එක Filter කිරීම (Entry කරපු දිනය අනුව)
+  List<Map<String, dynamic>> get _filteredDeliveries {
+    if (_selectedRange == null) return deliveries;
+    final startMs = DateTime(_selectedRange!.start.year, _selectedRange!.start.month, _selectedRange!.start.day)
+        .millisecondsSinceEpoch;
+    final endMs = DateTime(_selectedRange!.end.year, _selectedRange!.end.month, _selectedRange!.end.day, 23, 59, 59)
+        .millisecondsSinceEpoch;
+    return deliveries.where((d) {
+      final ts = (d['timestamp'] ?? 0) as int;
+      return ts >= startMs && ts <= endMs;
+    }).toList();
+  }
+
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('⚠️ Duplicate Bill No'),
-        content: Text('Bill No "$billNo" කියන එක දැනටමත් Database එකේ තියෙනවා.\n\nඑම Bill No එකම ආයෙත් Save කරන්නද?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Yes, Save Anyway'),
-          ),
-        ],
-      ),
+      firstDate: DateTime(now.year - 1, 1, 1),
+      lastDate: now.add(const Duration(days: 30)),
+      initialDateRange: _selectedRange ?? DateTimeRange(start: now, end: now),
     );
-    return result ?? false;
+    if (picked != null) {
+      setState(() => _selectedRange = picked);
+    }
   }
 
-  Future<void> _saveToDatabase() async {
-    if (_nameController.text.isEmpty || _phoneController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('නම සහ දුරකථන අංකය අවශ්‍යයි!'), backgroundColor: Colors.orange),
-      );
-      return;
+  void _clearDateRange() => setState(() => _selectedRange = null);
+
+  String _formatDate(DateTime d) => '${d.day}/${d.month}/${d.year}';
+
+  Future<void> _openMap(String address) async {
+    final query = Uri.encodeComponent(address);
+    final Uri mapUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
+    if (await canLaunchUrl(mapUri)) {
+      await launchUrl(mapUri, mode: LaunchMode.externalApplication);
     }
+  }
 
-    setState(() => _isSaving = true);
-
-    final billNo = _billNoController.text.trim();
-    if (billNo.isNotEmpty) {
-      final excludeId = _isEditMode ? widget.deliveryToEdit!['id'] as int : null;
-      final exists = await DatabaseHelper.instance.billNumberExists(billNo, excludeId: excludeId);
-      if (exists) {
-        setState(() => _isSaving = false);
-        final proceed = await _confirmDuplicateBillNumber(billNo);
-        if (!proceed) return; // User Cancel කළා - Save කරන්නේ නෑ
-        setState(() => _isSaving = true);
-      }
+  Future<void> _makePhoneCall(String phoneNumber) async {
+    if (phoneNumber.isEmpty) return;
+    final Uri launchUri = Uri(scheme: 'tel', path: phoneNumber);
+    if (await canLaunchUrl(launchUri)) {
+      await launchUrl(launchUri);
     }
+  }
 
-    final Map<String, dynamic> data = {
-      'billNumber': billNo,
-      'itemName': _itemController.text.isEmpty ? 'Parcel' : _itemController.text,
-      'customerName': _nameController.text,
-      'address': _addressController.text,
-      'phone': _phoneController.text,
-      'phone2': _phone2Controller.text,
-      'codAmount': _codController.text.isEmpty ? '0' : _codController.text,
-      'lat': _lat,
-      'lng': _lng,
-    };
-
-    if (_isEditMode) {
-      // දැනටම තියෙන Record එකක් Update කිරීම
-      await DatabaseHelper.instance.updateDelivery(widget.deliveryToEdit!['id'] as int, data);
-      if (!mounted) return;
-      setState(() => _isSaving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('සාර්ථකව Update විය!'), backgroundColor: Colors.green),
-      );
-      Navigator.pop(context, true); // reload signal එකක් parent screen එකට
-      return;
-    }
-
-    // අලුත් Record එකක් Insert කිරීම
-    data['notes'] = '';
-    await DatabaseHelper.instance.insertDelivery(data);
-
-    if (!mounted) return;
-    setState(() => _isSaving = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('සාර්ථකව Database එකට Save විය!'), backgroundColor: Colors.green),
+  Future<void> _editDelivery(Map<String, dynamic> item) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => SmartScannerScreen(deliveryToEdit: item)),
     );
+    if (result == true) _loadDeliveries();
+  }
+
+  // Order එකේ Status එක Manual ලෙස වෙනස් කිරීම (Delivered / Returned / Cancelled / Pending ආදී)
+  Future<void> _changeStatus(Map<String, dynamic> item, String newStatus) async {
+    final id = item['id'] as int;
+    final attempts = (item['callAttempts'] ?? 0) as int;
+    await dbHelper.updateDeliveryStatus(id, newStatus, attempts);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Status එක "$newStatus" ලෙස Update විය!'), backgroundColor: Colors.green),
+    );
+    _loadDeliveries();
+  }
+
+  // User Drag කරලා Route එකේ Order එක Manual ලෙස වෙනස් කිරීම
+  // Date Filter එකක් Active නම්, Filtered List එකේ පෙන්නන Items ටිකේම Order එක වෙනස් කරලා,
+  // ඉතුරු (Filter වුනු) Items ටික ඒ විදිහටම තියාගෙන, සම්පූර්ණ List එක නැවත සකස් කරනවා
+  Future<void> _onReorder(int oldIndex, int newIndex) async {
+    final visibleList = _filteredDeliveries;
+    setState(() {
+      if (newIndex > oldIndex) newIndex -= 1;
+      final movedItem = visibleList.removeAt(oldIndex);
+      visibleList.insert(newIndex, movedItem);
+
+      if (_selectedRange == null) {
+        deliveries = visibleList;
+      } else {
+        final visibleIds = visibleList.map((d) => d['id']).toSet();
+        final merged = <Map<String, dynamic>>[];
+        int visibleIndex = 0;
+        for (final d in deliveries) {
+          if (visibleIds.contains(d['id'])) {
+            merged.add(visibleList[visibleIndex]);
+            visibleIndex++;
+          } else {
+            merged.add(d);
+          }
+        }
+        deliveries = merged;
+      }
+    });
+    final orderedIds = deliveries.map((d) => d['id'] as int).toList();
+    await dbHelper.updateRouteOrder(orderedIds);
+  }
+
+  Future<Position?> _getCurrentPosition() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('GPS එක Off වෙලා තියෙන්නේ, කරුණාකර On කරන්න!'), backgroundColor: Colors.orange),
+        );
+      }
+      return null;
+    }
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return null;
+    }
+    if (permission == LocationPermission.deniedForever) return null;
+    return await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+  }
+
+  // Real "Auto Order by Location" - Google Directions API එකෙන් Best Route එක Calculate කිරීම
+  Future<void> _autoOrderByLocation() async {
+    if (!GooglePlacesService.isConfigured) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Google API Key එක Configure වෙලා නෑ. Build කරද්දි --dart-define=GOOGLE_API_KEY එකතු කරන්න.'),
+          backgroundColor: Colors.deepPurple,
+        ),
+      );
+      return;
+    }
+
+    final visibleList = _filteredDeliveries;
+    final withLocation = visibleList.where((d) => d['lat'] != null && d['lng'] != null).toList();
+    final withoutLocation = visibleList.where((d) => d['lat'] == null || d['lng'] == null).toList();
+
+    if (withLocation.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('අඩුම තරමින් Location Saved Delivery 2ක්වත් ඕන. Address Autocomplete එකෙන් Address එක Select කරලා Save කරන්න.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isOptimizing = true);
+
+    final position = await _getCurrentPosition();
+    if (position == null) {
+      setState(() => _isOptimizing = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Current Location එක ලබාගන්න බැරි උනා. Permission එක Check කරන්න.'), backgroundColor: Colors.red),
+        );
+      }
+      return;
+    }
+
+    final origin = LatLngResult(position.latitude, position.longitude);
+    final waypoints = withLocation.map((d) => LatLngResult((d['lat'] as num).toDouble(), (d['lng'] as num).toDouble())).toList();
+
+    final optimizedOrder = await GooglePlacesService.optimizeRoute(origin: origin, waypoints: waypoints);
+
+    setState(() => _isOptimizing = false);
+
+    if (optimizedOrder == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Route Optimize කරන්න බැරි උනා. API Key එකේ Directions API Enable කරලා තියෙනවද බලන්න.'), backgroundColor: Colors.red),
+        );
+      }
+      return;
+    }
+
+    // Optimized Order එක අනුව Visible List එක නැවත සකස් කිරීම, Location නැති ඒවා අන්තිමට එකතු කිරීම
+    final reorderedVisible = optimizedOrder.map((i) => withLocation[i]).toList();
+    reorderedVisible.addAll(withoutLocation);
 
     setState(() {
-      _nameController.clear();
-      _billNoController.clear();
-      _phoneController.clear();
-      _phone2Controller.clear();
-      _addressController.clear();
-      _itemController.clear();
-      _codController.clear();
-      _lat = null;
-      _lng = null;
-      _suggestions = [];
+      if (_selectedRange == null) {
+        deliveries = reorderedVisible;
+      } else {
+        final orderedVisibleByOriginal = _filteredDeliveries;
+        final visibleIds = orderedVisibleByOriginal.map((d) => d['id']).toSet();
+        final merged = <Map<String, dynamic>>[];
+        int visibleIndex = 0;
+        for (final d in deliveries) {
+          if (visibleIds.contains(d['id'])) {
+            merged.add(reorderedVisible[visibleIndex]);
+            visibleIndex++;
+          } else {
+            merged.add(d);
+          }
+        }
+        deliveries = merged;
+      }
     });
+    final orderedIds = deliveries.map((d) => d['id'] as int).toList();
+    await dbHelper.updateRouteOrder(orderedIds);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('✅ Route එක GPS Location එක අනුව Auto-Arrange කළා!'), backgroundColor: Colors.green),
+    );
   }
 
-  void _showComingSoonMessage() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('🚧 This feature activates in the premium version!'),
-        backgroundColor: Colors.deepPurple,
-        duration: Duration(seconds: 3),
+  // Reschedule Dialog එක - Calendar (Date Picker) + Note Box එකක් සමග
+  Future<void> _showRescheduleDialog(Map<String, dynamic> item) async {
+    DateTime? selectedDate;
+    final noteController = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              title: const Text('Reschedule Order'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      '${item['customerName'] ?? ''}  •  Bill: ${item['billNumber'] ?? '-'}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: dialogContext,
+                          initialDate: DateTime.now(),
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime.now().add(const Duration(days: 60)),
+                        );
+                        if (picked != null) {
+                          setDialogState(() => selectedDate = picked);
+                        }
+                      },
+                      icon: const Icon(Icons.calendar_today),
+                      label: Text(
+                        selectedDate == null
+                            ? 'Select Reschedule Date'
+                            : 'Date: ${selectedDate.toString().split(' ')[0]}',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: noteController,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Reschedule Note',
+                        hintText: 'උදා: Customer නෑ, හෙට උදේ එවන්න කිව්වා',
+                        border: OutlineInputBorder(),
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (selectedDate == null) {
+                      ScaffoldMessenger.of(dialogContext).showSnackBar(
+                        const SnackBar(content: Text('කරුණාකර දිනයක් Select කරන්න!'), backgroundColor: Colors.orange),
+                      );
+                      return;
+                    }
+                    await dbHelper.rescheduleDelivery(
+                      item['id'] as int,
+                      selectedDate!.millisecondsSinceEpoch,
+                      noteController.text,
+                    );
+                    if (!mounted) return;
+                    Navigator.pop(dialogContext);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Rescheduled successfully!'), backgroundColor: Colors.green),
+                    );
+                    _loadDeliveries();
+                  },
+                  child: const Text('Save Reschedule'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // Dialer-style Tappable Phone Number Row එකක්
+  Widget _phoneRow(String phone, {required Color color}) {
+    if (phone.isEmpty) return const SizedBox.shrink();
+    return InkWell(
+      onTap: () => _makePhoneCall(phone),
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          children: [
+            Icon(Icons.call, size: 15, color: color),
+            const SizedBox(width: 6),
+            Text(
+              phone,
+              style: TextStyle(color: color, fontWeight: FontWeight.w600, decoration: TextDecoration.underline),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final visibleDeliveries = _filteredDeliveries;
     return Scaffold(
-      appBar: AppBar(title: Text(_isEditMode ? 'Edit Parcel' : 'Manual Entry')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              _isEditMode ? 'Parcel විස්තර Edit කරන්න:' : 'Parcel විස්තර අතින් ඇතුළත් කරන්න:',
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'පාරිභෝගිකයාගේ නම (Name)', border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _billNoController,
-              decoration: const InputDecoration(labelText: 'Bill No', border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _phoneController,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(labelText: 'දුරකථන අංකය 1 (Phone)', border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _phone2Controller,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'දුරකථන අංකය 2 (Optional)',
-                hintText: 'තව අංකයක් තිබ්බොත් විතරක්',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            // Address Field + Autocomplete Suggestions
-            TextField(
-              controller: _addressController,
-              onChanged: _onAddressChanged,
-              decoration: InputDecoration(
-                labelText: 'ලිපිනය (Address)',
-                border: const OutlineInputBorder(),
-                suffixIcon: _isSearchingAddress
-                    ? const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                      )
-                    : (_lat != null && _lng != null)
-                        ? const Icon(Icons.check_circle, color: Colors.green)
-                        : null,
-              ),
-            ),
-            if (_suggestions.isNotEmpty)
-              Container(
-                margin: const EdgeInsets.only(top: 4),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                constraints: const BoxConstraints(maxHeight: 220),
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  padding: EdgeInsets.zero,
-                  itemCount: _suggestions.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, i) {
-                    final s = _suggestions[i];
-                    return ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.location_on_outlined, color: Colors.deepPurple),
-                      title: Text(s.description, style: const TextStyle(fontSize: 13)),
-                      onTap: () => _selectSuggestion(s),
-                    );
-                  },
-                ),
-              ),
-            if (GooglePlacesService.isConfigured && _lat != null && _lng != null)
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: Text('📍 Location Saved — Auto Route Order එකට Ready', style: TextStyle(fontSize: 11, color: Colors.green)),
-              ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _itemController,
-              decoration: const InputDecoration(labelText: 'භාණ්ඩයේ නම (Item)', border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _codController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'COD මුදල (Rs.)', border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _isEditMode ? Colors.deepPurple : Colors.teal,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 50),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: _isSaving ? null : _saveToDatabase,
-              icon: _isSaving
-                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : Icon(_isEditMode ? Icons.check_circle : Icons.save),
-              label: Text(
-                _isEditMode ? 'Update Details' : 'Save to Database',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-            ),
-            // Smart AI Scan button එකට ඉඩ ඉතුරු කරන්න
-            const SizedBox(height: 80),
-          ],
-        ),
+      appBar: AppBar(
+        title: const Text('Route Map & Deliveries'),
+        actions: [
+          IconButton(
+            icon: _isOptimizing
+                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.auto_awesome),
+            onPressed: _isOptimizing ? null : _autoOrderByLocation,
+            tooltip: 'Auto Order by Location',
+          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadDeliveries, tooltip: 'Refresh'),
+        ],
       ),
-      // Edit Mode එකේදී Smart Scan Button එක Hide කරනවා (අලුතින් Entry කරද්දි විතරයි ඕන)
-      floatingActionButton: _isEditMode
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: _showComingSoonMessage,
-              backgroundColor: Colors.deepPurple,
-              icon: const Icon(Icons.auto_awesome, color: Colors.white),
-              label: const Text('Smart Scan', style: TextStyle(color: Colors.white)),
+      body: Column(
+        children: [
+          // Date Range Filter (From - To)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pickDateRange,
+                    icon: const Icon(Icons.date_range, size: 18),
+                    label: Text(
+                      _selectedRange == null
+                          ? 'Date Range (From - To)'
+                          : '${_formatDate(_selectedRange!.start)}  →  ${_formatDate(_selectedRange!.end)}',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ),
+                if (_selectedRange != null)
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20, color: Colors.grey),
+                    onPressed: _clearDateRange,
+                    tooltip: 'Clear Date Filter',
+                  ),
+              ],
             ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : visibleDeliveries.isEmpty
+                    ? const Center(child: Text('මේ Date Range එකට බෙදාහැරීම් කිසිවක් නැත.'))
+                    : Column(
+                        children: [
+                          Container(
+                            width: double.infinity,
+                            color: Colors.deepPurple.withOpacity(0.06),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.drag_indicator, size: 16, color: Colors.grey),
+                                SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Order වෙනස් කරන්න - handle එක (☰) ටිකක් Hold කරලා ඇද ගන්න, හෝ ✨ Auto Order Button එක try කරන්න.',
+                                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: ReorderableListView.builder(
+                              buildDefaultDragHandles: false,
+                              padding: const EdgeInsets.all(16.0),
+                              itemCount: visibleDeliveries.length,
+                              onReorder: _onReorder,
+                              itemBuilder: (context, index) {
+                                final item = visibleDeliveries[index];
+                                final billNo = (item['billNumber'] ?? '').toString();
+                                final itemName = (item['itemName'] ?? 'Parcel').toString();
+                                final codAmount = (item['codAmount'] ?? '0').toString();
+                                final address = (item['address'] ?? '').toString();
+                                final phone1 = (item['phone'] ?? '').toString();
+                                final phone2 = (item['phone2'] ?? '').toString();
+                                final customerName = (item['customerName'] ?? '').toString();
+                                final id = item['id'] as int;
+                                final hasLocation = item['lat'] != null && item['lng'] != null;
+
+                                return Card(
+                                  key: ValueKey(id),
+                                  margin: const EdgeInsets.only(bottom: 12.0),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12.0),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            ReorderableDelayedDragStartListener(
+                                              index: index,
+                                              child: Container(
+                                                width: 40,
+                                                height: 40,
+                                                alignment: Alignment.center,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.grey.withOpacity(0.08),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: const Icon(Icons.drag_handle, color: Colors.grey),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Container(
+                                              width: 26,
+                                              height: 26,
+                                              alignment: Alignment.center,
+                                              decoration: BoxDecoration(
+                                                color: Colors.deepPurple.withOpacity(0.1),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: Text(
+                                                '${index + 1}',
+                                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Row(
+                                                children: [
+                                                  Flexible(
+                                                    child: Text(
+                                                      customerName,
+                                                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                  if (hasLocation) const Padding(
+                                                    padding: EdgeInsets.only(left: 4),
+                                                    child: Icon(Icons.gps_fixed, size: 13, color: Colors.green),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                                              onPressed: () => _editDelivery(item),
+                                              tooltip: 'Edit',
+                                            ),
+                                            PopupMenuButton<String>(
+                                              icon: const Icon(Icons.more_vert),
+                                              tooltip: 'Change Status',
+                                              onSelected: (value) => _changeStatus(item, value),
+                                              itemBuilder: (context) => const [
+                                                PopupMenuItem(value: 'pending', child: Text('Mark as Pending')),
+                                                PopupMenuItem(value: 'confirmed', child: Text('Mark as Confirmed')),
+                                                PopupMenuItem(value: 'delivered', child: Text('Mark as Delivered')),
+                                                PopupMenuItem(value: 'returned', child: Text('Mark as Returned')),
+                                                PopupMenuItem(value: 'cancelled', child: Text('Mark as Cancelled')),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                        if (billNo.isNotEmpty) ...[
+                                          const SizedBox(height: 2),
+                                          Padding(
+                                            padding: const EdgeInsets.only(left: 46),
+                                            child: Text('Bill No: $billNo', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                                          ),
+                                        ],
+                                        const SizedBox(height: 8),
+                                        Padding(
+                                          padding: const EdgeInsets.only(left: 46),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  const Icon(Icons.inventory_2_outlined, size: 16, color: Colors.grey),
+                                                  const SizedBox(width: 6),
+                                                  Expanded(child: Text('Item: $itemName')),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                children: [
+                                                  const Icon(Icons.payments_outlined, size: 16, color: Colors.green),
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    'Price (COD): Rs. $codAmount',
+                                                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 8),
+                                              Text(address),
+                                              const SizedBox(height: 6),
+                                              _phoneRow(phone1, color: Colors.blue),
+                                              _phoneRow(phone2, color: Colors.indigo),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(height: 12),
+                                        Row(
+                                          children: [
+                                            IconButton(
+                                              icon: const Icon(Icons.navigation, color: Colors.blue),
+                                              onPressed: () => _openMap(address),
+                                              tooltip: 'Navigate',
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(Icons.event_repeat, color: Colors.orange),
+                                              onPressed: () => _showRescheduleDialog(item),
+                                              tooltip: 'Reschedule',
+                                            ),
+                                            const Spacer(),
+                                            ElevatedButton(
+                                              onPressed: () => _changeStatus(item, 'delivered'),
+                                              child: const Text('Delivered'),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+          ),
+        ],
+      ),
     );
   }
 }
