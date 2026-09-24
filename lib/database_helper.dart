@@ -45,10 +45,10 @@ class DatabaseHelper {
         phone $textType,
         phone2 $textTypeNull,
         codAmount $textType,
-        status $textType,         
+        status $textType,
         callAttempts $integerType,
-        rescheduledDate $integerTypeNull, 
-        notes $textTypeNull,      
+        rescheduledDate $integerTypeNull,
+        notes $textTypeNull,
         timestamp $integerType,
         routeOrder $integerTypeNull,
         lat $realTypeNull,
@@ -57,7 +57,7 @@ class DatabaseHelper {
     ''');
   }
 
-  // Existing users ට (පරණ Database එකක් තියෙන අයට) අලුත් columns auto add කිරීම
+  // පරණ Database එකක් තියෙන අයට අලුත් columns auto add කිරීම
   Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 3) {
       await db.execute('ALTER TABLE deliveries ADD COLUMN routeOrder INTEGER');
@@ -77,19 +77,16 @@ class DatabaseHelper {
     deliveryData['timestamp'] = now;
     deliveryData['status'] = 'pending';
     deliveryData['callAttempts'] = 0;
-    // අලුතින් එකතු කරන Parcel එක route එකේ අන්තිමට යන්න routeOrder එක timestamp එකෙන්ම set කිරීම
+    // අලුත් Parcel එක route එකේ අන්තිමට යන්න
     deliveryData['routeOrder'] = now;
     await db.insert('deliveries', deliveryData);
   }
 
-  // Smart Scanner එකෙන් Edit Mode එකේදී, දැනටම තියෙන Record එකක් Update කිරීම
   Future<int> updateDelivery(int id, Map<String, dynamic> deliveryData) async {
     final db = await instance.database;
     return await db.update('deliveries', deliveryData, where: 'id = ?', whereArgs: [id]);
   }
 
-  // Bill No එක Save කරන්න කලින්, දැනටම Database එකේ එම Bill No එක තියෙනවද Check කිරීම
-  // (Edit Mode එකේදී, දැනටම Edit කරන Record එකම Exclude කරන්න excludeId දෙනවා)
   Future<bool> billNumberExists(String billNo, {int? excludeId}) async {
     if (billNo.trim().isEmpty) return false;
     final db = await instance.database;
@@ -103,6 +100,22 @@ class DatabaseHelper {
     return result.isNotEmpty;
   }
 
+  // 🔍 අලුත්: Search (නම / Bill No / Phone 1 / Phone 2 / Address / Item)
+  Future<List<Map<String, dynamic>>> searchDeliveries(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) return [];
+    final db = await instance.database;
+    final like = '%$q%';
+    return await db.query(
+      'deliveries',
+      where:
+          'customerName LIKE ? OR billNumber LIKE ? OR phone LIKE ? OR phone2 LIKE ? OR address LIKE ? OR itemName LIKE ?',
+      whereArgs: List.filled(6, like),
+      orderBy: 'timestamp DESC',
+      limit: 100,
+    );
+  }
+
   Future<List<Map<String, dynamic>>> getMorningCalls() async {
     final db = await instance.database;
     final now = DateTime.now();
@@ -111,11 +124,10 @@ class DatabaseHelper {
       'deliveries',
       where: '(status = ? OR status = ?) AND (rescheduledDate IS NULL OR rescheduledDate <= ?)',
       whereArgs: ['pending', 'rescheduled', endOfToday],
-      orderBy: 'callAttempts DESC, timestamp ASC', 
+      orderBy: 'callAttempts DESC, timestamp ASC',
     );
   }
 
-  // Route screen එකේ, User විසින් manual ලෙස set කරපු පිළිවෙලට (routeOrder) Confirmed Deliveries ලබා ගැනීම
   Future<List<Map<String, dynamic>>> getConfirmedDeliveries() async {
     final db = await instance.database;
     return await db.query(
@@ -126,7 +138,6 @@ class DatabaseHelper {
     );
   }
 
-  // Report screen එකේ Filter/Select කිරීම සඳහා bills/deliveries ඔක්කොම ලබා ගැනීම
   Future<List<Map<String, dynamic>>> getAllDeliveries() async {
     final db = await instance.database;
     return await db.query('deliveries', orderBy: 'timestamp DESC');
@@ -142,13 +153,11 @@ class DatabaseHelper {
     return await db.update('deliveries', {'status': 'rescheduled', 'rescheduledDate': newDateEpoch, 'notes': note}, where: 'id = ?', whereArgs: [id]);
   }
 
-  // Pending Calls Screen එකේ Note එක වෙන වෙනම Add/Edit කිරීම සඳහා
   Future<int> updateNote(int id, String note) async {
     final db = await instance.database;
     return await db.update('deliveries', {'notes': note}, where: 'id = ?', whereArgs: [id]);
   }
 
-  // Route screen එකේ User Drag කරලා (හෝ Auto-Order කරලා) හදන අලුත් Order එක Database එකට Save කිරීම
   Future<void> updateRouteOrder(List<int> orderedIds) async {
     final db = await instance.database;
     final batch = db.batch();
@@ -158,17 +167,15 @@ class DatabaseHelper {
     await batch.commit(noResult: true);
   }
 
-  // අලුතින් එකතු කළ කේතය: End of Day Report එක සඳහා දත්ත ලබා ගැනීම
   Future<Map<String, dynamic>> getDailyReportSummary() async {
     final db = await instance.database;
-    
+
     final delivered = await db.query('deliveries', where: 'status = ?', whereArgs: ['delivered']);
     final returned = await db.query('deliveries', where: 'status = ?', whereArgs: ['returned']);
     final pending = await db.query('deliveries', where: 'status = ? OR status = ?', whereArgs: ['pending', 'rescheduled']);
 
     double totalCod = 0;
     for (var item in delivered) {
-      // අකුරු හෝ රුපියල් සලකුණු තිබුණොත් ඒවා අයින් කරලා ගාණ විතරක් එකතු කිරීම
       String codStr = item['codAmount'].toString().replaceAll(RegExp(r'[^0-9.]'), '');
       if (codStr.isNotEmpty) {
         totalCod += double.tryParse(codStr) ?? 0;
@@ -185,22 +192,48 @@ class DatabaseHelper {
     };
   }
 
+  // ✅ Fix: CSV එක සාර්ථකව save වුණාට පස්සේ විතරයි පරණ data delete කරන්නේ
   Future<void> backupAndCleanOldData() async {
     final db = await instance.database;
     final fourteenDaysAgo = DateTime.now().subtract(const Duration(days: 14)).millisecondsSinceEpoch;
     final oldData = await db.query('deliveries', where: 'timestamp < ?', whereArgs: [fourteenDaysAgo]);
     if (oldData.isEmpty) return;
-    List<List<dynamic>> csvData = [['Bill No', 'Item', 'Customer Name', 'Address', 'Phone', 'Phone 2', 'COD', 'Status', 'Attempts', 'Notes']];
+
+    List<List<dynamic>> csvData = [
+      ['Bill No', 'Item', 'Customer Name', 'Address', 'Phone', 'Phone 2', 'COD', 'Status', 'Attempts', 'Notes', 'Rescheduled Date', 'Lat', 'Lng']
+    ];
     for (var row in oldData) {
-      csvData.add([row['billNumber'], row['itemName'], row['customerName'], row['address'], row['phone'], row['phone2'], row['codAmount'], row['status'], row['callAttempts'], row['notes']]);
+      csvData.add([
+        row['billNumber'],
+        row['itemName'],
+        row['customerName'],
+        row['address'],
+        row['phone'],
+        row['phone2'],
+        row['codAmount'],
+        row['status'],
+        row['callAttempts'],
+        row['notes'],
+        row['rescheduledDate'],
+        row['lat'],
+        row['lng'],
+      ]);
     }
-    String csvString = const ListToCsvConverter().convert(csvData);
-    Directory? directory = await getExternalStorageDirectory();
-    if (directory != null) {
-      String filePath = '${directory.path}/ShiftDrop_Backup_${DateTime.now().millisecondsSinceEpoch}.csv';
-      File file = File(filePath);
-      await file.writeAsString(csvString);
+    final csvString = const ListToCsvConverter().convert(csvData);
+
+    try {
+      Directory? directory = await getExternalStorageDirectory();
+      directory ??= await getApplicationDocumentsDirectory();
+      final filePath = '${directory.path}/ShiftDrop_Backup_${DateTime.now().millisecondsSinceEpoch}.csv';
+      final file = File(filePath);
+      await file.writeAsString(csvString, flush: true);
+
+      // File එක ඇත්තටම ලියවුණාද කියලා තහවුරු කරලා විතරක් delete කරනවා
+      if (await file.exists() && await file.length() > 0) {
+        await db.delete('deliveries', where: 'timestamp < ?', whereArgs: [fourteenDaysAgo]);
+      }
+    } catch (_) {
+      // Backup අසාර්ථක නම් data delete කරන්නේ නෑ
     }
-    await db.delete('deliveries', where: 'timestamp < ?', whereArgs: [fourteenDaysAgo]);
   }
 }
