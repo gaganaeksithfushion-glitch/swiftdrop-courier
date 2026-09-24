@@ -88,6 +88,21 @@ class DatabaseHelper {
     return await db.update('deliveries', deliveryData, where: 'id = ?', whereArgs: [id]);
   }
 
+  // Bill No එක Save කරන්න කලින්, දැනටම Database එකේ එම Bill No එක තියෙනවද Check කිරීම
+  // (Edit Mode එකේදී, දැනටම Edit කරන Record එකම Exclude කරන්න excludeId දෙනවා)
+  Future<bool> billNumberExists(String billNo, {int? excludeId}) async {
+    if (billNo.trim().isEmpty) return false;
+    final db = await instance.database;
+    String where = 'billNumber = ?';
+    List<dynamic> args = [billNo.trim()];
+    if (excludeId != null) {
+      where += ' AND id != ?';
+      args.add(excludeId);
+    }
+    final result = await db.query('deliveries', where: where, whereArgs: args, limit: 1);
+    return result.isNotEmpty;
+  }
+
   Future<List<Map<String, dynamic>>> getMorningCalls() async {
     final db = await instance.database;
     final now = DateTime.now();
