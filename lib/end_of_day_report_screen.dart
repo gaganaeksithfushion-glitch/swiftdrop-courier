@@ -18,9 +18,10 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
   List<Map<String, dynamic>> _allDeliveries = [];
   final Set<int> _selectedIds = {};
   String _selectedFilter = 'All';
+  DateTimeRange? _selectedRange;
   bool _isLoading = true;
 
-  final List<String> _filters = ['All', 'Pending', 'Confirmed', 'Delivered', 'Returned', 'Rescheduled'];
+  final List<String> _filters = ['All', 'Pending', 'Confirmed', 'Delivered', 'Returned', 'Cancelled', 'Rescheduled'];
 
   @override
   void initState() {
@@ -45,12 +46,59 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
     if (result == true) _loadDeliveries();
   }
 
+  // Mistake එකකින් Status එක වැරදුනොත් (උදා: Pending එකක් වැරදීමකින් Delivered කරාට පස්සේ),
+  // මෙතනින් ආපහු නිවැරදි Status එකට Change කරන්න පුළුවන්
+  Future<void> _changeStatus(Map<String, dynamic> item, String newStatus) async {
+    final id = item['id'] as int;
+    final attempts = (item['callAttempts'] ?? 0) as int;
+    await dbHelper.updateDeliveryStatus(id, newStatus, attempts);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Status එක "$newStatus" ලෙස Update විය!'), backgroundColor: Colors.green),
+    );
+    _loadDeliveries();
+  }
+
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 1, 1, 1),
+      lastDate: now.add(const Duration(days: 1)),
+      initialDateRange: _selectedRange ??
+          DateTimeRange(start: now.subtract(const Duration(days: 6)), end: now),
+    );
+    if (picked != null) {
+      setState(() => _selectedRange = picked);
+    }
+  }
+
+  void _clearDateRange() {
+    setState(() => _selectedRange = null);
+  }
+
   List<Map<String, dynamic>> get _filteredDeliveries {
-    if (_selectedFilter == 'All') return _allDeliveries;
-    return _allDeliveries.where((d) {
-      final status = (d['status'] ?? 'pending').toString().toLowerCase();
-      return status == _selectedFilter.toLowerCase();
-    }).toList();
+    var list = _allDeliveries;
+
+    if (_selectedFilter != 'All') {
+      list = list.where((d) {
+        final status = (d['status'] ?? 'pending').toString().toLowerCase();
+        return status == _selectedFilter.toLowerCase();
+      }).toList();
+    }
+
+    if (_selectedRange != null) {
+      final startMs = DateTime(_selectedRange!.start.year, _selectedRange!.start.month, _selectedRange!.start.day)
+          .millisecondsSinceEpoch;
+      final endMs = DateTime(_selectedRange!.end.year, _selectedRange!.end.month, _selectedRange!.end.day, 23, 59, 59)
+          .millisecondsSinceEpoch;
+      list = list.where((d) {
+        final ts = (d['timestamp'] ?? 0) as int;
+        return ts >= startMs && ts <= endMs;
+      }).toList();
+    }
+
+    return list;
   }
 
   void _toggleSelectAll(bool selectAll) {
@@ -133,6 +181,8 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
     );
   }
 
+  String _formatDate(DateTime d) => '${d.day}/${d.month}/${d.year}';
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filteredDeliveries;
@@ -148,7 +198,7 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                // Filter chips
+                // Filter chips (Status)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
                   child: SingleChildScrollView(
@@ -167,6 +217,33 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
                         );
                       }).toList(),
                     ),
+                  ),
+                ),
+
+                // Date Range Filter (From - To)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _pickDateRange,
+                          icon: const Icon(Icons.date_range, size: 18),
+                          label: Text(
+                            _selectedRange == null
+                                ? 'Date Range (From - To)'
+                                : '${_formatDate(_selectedRange!.start)}  →  ${_formatDate(_selectedRange!.end)}',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ),
+                      if (_selectedRange != null)
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20, color: Colors.grey),
+                          onPressed: _clearDateRange,
+                          tooltip: 'Clear Date Filter',
+                        ),
+                    ],
                   ),
                 ),
 
@@ -222,24 +299,34 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   _statusBadge((d['status'] ?? 'pending').toString()),
-                                  IconButton(
-                                    icon: const Icon(Icons.edit, size: 18, color: Colors.grey),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                    onPressed: () => _editDelivery(d),
-                                    tooltip: 'Edit',
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      // Status එක Manual ලෙස Revert/Change කරන්න - Mistake එකක් නම් මෙතනින් Fix කරගන්න
+                                      PopupMenuButton<String>(
+                                        icon: const Icon(Icons.sync_alt, size: 18, color: Colors.grey),
+                                        tooltip: 'Change Status',
+                                        padding: EdgeInsets.zero,
+                                        onSelected: (v) => _changeStatus(d, v),
+                                        itemBuilder: (context) => const [
+                                          PopupMenuItem(value: 'pending', child: Text('Mark as Pending')),
+                                          PopupMenuItem(value: 'confirmed', child: Text('Mark as Confirmed')),
+                                          PopupMenuItem(value: 'delivered', child: Text('Mark as Delivered')),
+                                          PopupMenuItem(value: 'returned', child: Text('Mark as Returned')),
+                                          PopupMenuItem(value: 'cancelled', child: Text('Mark as Cancelled')),
+                                        ],
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.edit, size: 18, color: Colors.grey),
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        onPressed: () => _editDelivery(d),
+                                        tooltip: 'Edit',
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
-                              onTap: () {
-                                setState(() {
-                                  if (isSelected) {
-                                    _selectedIds.remove(id);
-                                  } else {
-                                    _selectedIds.add(id);
-                                  }
-                                });
-                              },
                             );
                           },
                         ),
@@ -273,6 +360,9 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
         break;
       case 'returned':
         color = Colors.red;
+        break;
+      case 'cancelled':
+        color = Colors.black54;
         break;
       case 'confirmed':
         color = Colors.blue;
