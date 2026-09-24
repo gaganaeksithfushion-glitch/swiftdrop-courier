@@ -1,23 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geolocator/geolocator.dart';
 import 'database_helper.dart';
 import 'smart_scanner_screen.dart';
 
-class EndOfDayReportScreen extends StatefulWidget {
-  const EndOfDayReportScreen({super.key});
+class PendingCallsScreen extends StatefulWidget {
+  const PendingCallsScreen({super.key});
 
   @override
-  State<EndOfDayReportScreen> createState() => _EndOfDayReportScreenState();
+  State<PendingCallsScreen> createState() => _PendingCallsScreenState();
 }
 
-class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
+class _PendingCallsScreenState extends State<PendingCallsScreen> {
   final DatabaseHelper dbHelper = DatabaseHelper.instance;
-
-  List<Map<String, dynamic>> _allDeliveries = [];
-  final Set<int> _selectedIds = {};
-  String _selectedFilter = 'All';
+  List<Map<String, dynamic>> pendingCalls = [];
   DateTimeRange? _selectedRange;
   bool _isLoading = true;
 
@@ -25,12 +22,13 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
-  final List<String> _filters = ['All', 'Pending', 'Confirmed', 'Delivered', 'Returned', 'Cancelled', 'Rescheduled'];
+  final String _defaultMsg =
+      "ආයුබෝවන් {name}, ඔබගේ පාර්සලය (COD: Rs.{cod}) අද දිනයේ බෙදා හැරීමට නියමිතයි. කරුණාකර ඔබගේ Location එක එවන්න.";
 
   @override
   void initState() {
     super.initState();
-    _loadDeliveries();
+    _loadPendingCalls();
   }
 
   @override
@@ -39,84 +37,41 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
     super.dispose();
   }
 
-  Future<void> _loadDeliveries() async {
+  // Database එකෙන් අදට Pending/Rescheduled Calls ටික load කිරීම
+  Future<void> _loadPendingCalls() async {
     setState(() => _isLoading = true);
-    final data = await dbHelper.getAllDeliveries();
+    final data = await dbHelper.getMorningCalls();
+    if (!mounted) return;
     setState(() {
-      _allDeliveries = data;
+      pendingCalls = data;
       _isLoading = false;
     });
   }
 
-  Future<void> _editDelivery(Map<String, dynamic> item) async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => SmartScannerScreen(deliveryToEdit: item)),
-    );
-    if (result == true) _loadDeliveries();
-  }
-
-  // Mistake එකකින් Status එක වැරදුනොත් (උදා: Pending එකක් වැරදීමකින් Delivered කරාට පස්සේ),
-  // මෙතනින් ආපහු නිවැරදි Status එකට Change කරන්න පුළුවන්
-  Future<void> _changeStatus(Map<String, dynamic> item, String newStatus) async {
-    final id = item['id'] as int;
-    final attempts = (item['callAttempts'] ?? 0) as int;
-    await dbHelper.updateDeliveryStatus(id, newStatus, attempts);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Status එක "$newStatus" ලෙස Update විය!'), backgroundColor: Colors.green),
-    );
-    _loadDeliveries();
-  }
-
-  Future<void> _pickDateRange() async {
-    final now = DateTime.now();
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(now.year - 1, 1, 1),
-      lastDate: now.add(const Duration(days: 1)),
-      initialDateRange: _selectedRange ??
-          DateTimeRange(start: now.subtract(const Duration(days: 6)), end: now),
-    );
-    if (picked != null) {
-      setState(() => _selectedRange = picked);
-    }
-  }
-
-  void _clearDateRange() {
-    setState(() => _selectedRange = null);
-  }
-
-  List<Map<String, dynamic>> get _filteredDeliveries {
-    var list = _allDeliveries;
-
-    if (_selectedFilter != 'All') {
-      list = list.where((d) {
-        final status = (d['status'] ?? 'pending').toString().toLowerCase();
-        return status == _selectedFilter.toLowerCase();
-      }).toList();
-    }
+  // User Select කරපු Date Range එකට, සහ Search Query එකට අනුව List එක Filter කිරීම
+  List<Map<String, dynamic>> get _filteredCalls {
+    var list = pendingCalls;
 
     if (_selectedRange != null) {
       final startMs = DateTime(_selectedRange!.start.year, _selectedRange!.start.month, _selectedRange!.start.day)
           .millisecondsSinceEpoch;
       final endMs = DateTime(_selectedRange!.end.year, _selectedRange!.end.month, _selectedRange!.end.day, 23, 59, 59)
           .millisecondsSinceEpoch;
-      list = list.where((d) {
-        final ts = (d['timestamp'] ?? 0) as int;
+      list = list.where((c) {
+        final ts = (c['timestamp'] ?? 0) as int;
         return ts >= startMs && ts <= endMs;
       }).toList();
     }
 
     final q = _searchQuery.trim().toLowerCase();
     if (q.isNotEmpty) {
-      list = list.where((d) {
-        final name = (d['customerName'] ?? '').toString().toLowerCase();
-        final bill = (d['billNumber'] ?? '').toString().toLowerCase();
-        final phone1 = (d['phone'] ?? '').toString().toLowerCase();
-        final phone2 = (d['phone2'] ?? '').toString().toLowerCase();
-        final address = (d['address'] ?? '').toString().toLowerCase();
-        final item = (d['itemName'] ?? '').toString().toLowerCase();
+      list = list.where((c) {
+        final name = (c['customerName'] ?? '').toString().toLowerCase();
+        final bill = (c['billNumber'] ?? '').toString().toLowerCase();
+        final phone1 = (c['phone'] ?? '').toString().toLowerCase();
+        final phone2 = (c['phone2'] ?? '').toString().toLowerCase();
+        final address = (c['address'] ?? '').toString().toLowerCase();
+        final item = (c['itemName'] ?? '').toString().toLowerCase();
         return name.contains(q) || bill.contains(q) || phone1.contains(q) || phone2.contains(q) || address.contains(q) || item.contains(q);
       }).toList();
     }
@@ -124,306 +79,464 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
     return list;
   }
 
-  void _toggleSelectAll(bool selectAll) {
-    setState(() {
-      if (selectAll) {
-        _selectedIds.addAll(_filteredDeliveries.map((d) => d['id'] as int));
-      } else {
-        for (final d in _filteredDeliveries) {
-          _selectedIds.remove(d['id']);
-        }
-      }
-    });
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 1, 1, 1),
+      lastDate: now.add(const Duration(days: 30)),
+      initialDateRange: _selectedRange ?? DateTimeRange(start: now, end: now),
+    );
+    if (picked != null) {
+      setState(() => _selectedRange = picked);
+    }
   }
 
-  bool get _allFilteredSelected =>
-      _filteredDeliveries.isNotEmpty && _filteredDeliveries.every((d) => _selectedIds.contains(d['id']));
-
-  Future<void> _generatePdf() async {
-    final selectedItems = _allDeliveries.where((d) => _selectedIds.contains(d['id'])).toList();
-
-    if (selectedItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('කරුණාකර අවම වශයෙන් bill එකක්වත් Select කරන්න!'), backgroundColor: Colors.orange),
-      );
-      return;
-    }
-
-    final pdf = pw.Document();
-
-    double totalCod = 0;
-    for (final item in selectedItems) {
-      final codStr = (item['codAmount'] ?? '0').toString().replaceAll(RegExp(r'[^0-9.]'), '');
-      totalCod += double.tryParse(codStr) ?? 0;
-    }
-
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(24),
-        build: (pw.Context context) {
-          return [
-            pw.Header(
-              level: 0,
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text('ShiftDrop Report ($_selectedFilter)', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-                  pw.Text('Date: ${DateTime.now().toLocal().toString().split(' ')[0]}', style: const pw.TextStyle(fontSize: 12)),
-                ],
-              ),
-            ),
-            pw.SizedBox(height: 10),
-            pw.Text('Selected Bills: ${selectedItems.length}   |   Total COD: Rs. ${totalCod.toStringAsFixed(2)}',
-                style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
-            pw.SizedBox(height: 16),
-            pw.Table.fromTextArray(
-              headers: ['Bill No', 'Name', 'Phone', 'Address', 'Item', 'COD', 'Status'],
-              data: selectedItems.map((d) => [
-                (d['billNumber'] ?? '').toString(),
-                (d['customerName'] ?? '').toString(),
-                (d['phone'] ?? '').toString(),
-                (d['address'] ?? '').toString(),
-                (d['itemName'] ?? '').toString(),
-                (d['codAmount'] ?? '').toString(),
-                (d['status'] ?? 'pending').toString().toUpperCase(),
-              ]).toList(),
-              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
-              headerDecoration: const pw.BoxDecoration(color: PdfColors.deepPurple),
-              cellHeight: 24,
-              cellStyle: const pw.TextStyle(fontSize: 9),
-              cellAlignment: pw.Alignment.centerLeft,
-            ),
-          ];
-        },
-      ),
-    );
-
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdf.save(),
-    );
-  }
+  void _clearDateRange() => setState(() => _selectedRange = null);
 
   String _formatDate(DateTime d) => '${d.day}/${d.month}/${d.year}';
 
+  // දුරකථන ඇමතුමක් ලබා දීම (Dialer) - Phone 1 හෝ Phone 2 ඕනෑම එකකට
+  Future<void> _makePhoneCall(String phoneNumber) async {
+    if (phoneNumber.isEmpty) return;
+    final Uri launchUri = Uri(scheme: 'tel', path: phoneNumber);
+    if (await canLaunchUrl(launchUri)) {
+      await launchUrl(launchUri);
+    } else {
+      debugPrint('Could not launch phone call to $phoneNumber');
+    }
+  }
+
+  Future<void> _editDelivery(Map<String, dynamic> item) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => SmartScannerScreen(deliveryToEdit: item)),
+    );
+    if (result == true) _loadPendingCalls();
+  }
+
+  // Settings එකේ Save කරපු WhatsApp Template එක Load කිරීම, {name}/{cod} Replace කිරීම
+  Future<String> _buildMessage(Map<String, dynamic> item) async {
+    final prefs = await SharedPreferences.getInstance();
+    String template = prefs.getString('whatsapp_template') ?? _defaultMsg;
+    template = template.replaceAll('{name}', (item['customerName'] ?? '').toString());
+    template = template.replaceAll('{cod}', (item['codAmount'] ?? '0').toString());
+    return template;
+  }
+
+  // Sri Lankan local format (07XXXXXXXX) එක WhatsApp ට ඕන International format (94XXXXXXXXX) එකට convert කිරීම
+  String _toWhatsAppFormat(String phone) {
+    String p = phone.trim().replaceAll(' ', '').replaceAll('-', '');
+    if (p.startsWith('+94')) return p.substring(1);
+    if (p.startsWith('94') && p.length == 11) return p;
+    if (p.startsWith('0')) return '94${p.substring(1)}';
+    return p;
+  }
+
+  // GPS හරහා Current Location එක ලබාගෙන Google Maps Link එකක් හදාගැනීම
+  Future<String?> _getLocationLink(BuildContext dialogContext) async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      ScaffoldMessenger.of(dialogContext).showSnackBar(
+        const SnackBar(content: Text('Location Services එක Off වෙලා තියෙන්නේ, කරුණාකර GPS On කරන්න!'), backgroundColor: Colors.orange),
+      );
+      return null;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        if (dialogContext.mounted) {
+          ScaffoldMessenger.of(dialogContext).showSnackBar(
+            const SnackBar(content: Text('Location Permission එක දෙන්න ඕන!'), backgroundColor: Colors.red),
+          );
+        }
+        return null;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      if (dialogContext.mounted) {
+        ScaffoldMessenger.of(dialogContext).showSnackBar(
+          const SnackBar(content: Text('Location Permission එක Settings එකෙන් On කරන්න ඕන!'), backgroundColor: Colors.red),
+        );
+      }
+      return null;
+    }
+
+    final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    return 'https://maps.google.com/?q=${position.latitude},${position.longitude}';
+  }
+
+  // Confirm Dialog එක - WhatsApp Message Preview + Location Picker සමග
+  Future<void> _showConfirmDialog(Map<String, dynamic> item) async {
+    final phone1 = (item['phone'] ?? '').toString();
+    final phone2 = (item['phone2'] ?? '').toString();
+    final messageController = TextEditingController(text: await _buildMessage(item));
+    String selectedPhone = phone1.isNotEmpty ? phone1 : phone2;
+    bool isFetchingLocation = false;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              title: const Text('Confirm & Send WhatsApp'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (phone2.isNotEmpty) ...[
+                      const Text('WhatsApp යවන්නේ මොන Number එකටද?', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                      const SizedBox(height: 4),
+                      DropdownButtonFormField<String>(
+                        value: selectedPhone,
+                        decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                        items: [phone1, phone2]
+                            .where((p) => p.isNotEmpty)
+                            .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                            .toList(),
+                        onChanged: (value) {
+                          if (value != null) setDialogState(() => selectedPhone = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    TextField(
+                      controller: messageController,
+                      maxLines: 5,
+                      decoration: const InputDecoration(
+                        labelText: 'WhatsApp Message',
+                        border: OutlineInputBorder(),
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: isFetchingLocation
+                          ? null
+                          : () async {
+                              setDialogState(() => isFetchingLocation = true);
+                              final link = await _getLocationLink(dialogContext);
+                              setDialogState(() => isFetchingLocation = false);
+                              if (link != null) {
+                                messageController.text = '${messageController.text}\n📍 My Location: $link';
+                              }
+                            },
+                      icon: isFetchingLocation
+                          ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.my_location, color: Colors.blue),
+                      label: const Text('Add My Current Location'),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () async {
+                    Navigator.pop(dialogContext);
+                    await _updateStatus(item, 'confirmed');
+                  },
+                  child: const Text('Skip & Just Confirm'),
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                  onPressed: selectedPhone.isEmpty
+                      ? null
+                      : () async {
+                          Navigator.pop(dialogContext);
+                          await _sendWhatsAppAndConfirm(item, selectedPhone, messageController.text);
+                        },
+                  icon: const Icon(Icons.chat),
+                  label: const Text('Send via WhatsApp'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _sendWhatsAppAndConfirm(Map<String, dynamic> item, String phone, String message) async {
+    final formattedPhone = _toWhatsAppFormat(phone);
+    final encodedMessage = Uri.encodeComponent(message);
+    final Uri whatsappUri = Uri.parse('https://wa.me/$formattedPhone?text=$encodedMessage');
+
+    if (await canLaunchUrl(whatsappUri)) {
+      await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('WhatsApp නොමැත හෝ විවෘත කරගත නොහැක.'), backgroundColor: Colors.red),
+        );
+      }
+    }
+    await _updateStatus(item, 'confirmed');
+  }
+
+  Future<void> _updateStatus(Map<String, dynamic> item, String status) async {
+    final id = item['id'] as int;
+    final attempts = (item['callAttempts'] ?? 0) as int;
+    final newAttempts = status == 'pending' ? attempts + 1 : attempts;
+    await dbHelper.updateDeliveryStatus(id, status, newAttempts);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('පාර්සලය $status ලෙස සටහන් විය!'),
+        backgroundColor: status == 'confirmed' ? Colors.green : Colors.red,
+      ),
+    );
+    _loadPendingCalls();
+  }
+
+  // Call Attempt Note එකක් Add/Edit කිරීම - Card එකේ පහළින්ම පේනවා
+  Future<void> _showNoteDialog(Map<String, dynamic> item) async {
+    final noteController = TextEditingController(text: (item['notes'] ?? '').toString());
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Call Note එකතු කරන්න'),
+          content: TextField(
+            controller: noteController,
+            maxLines: 4,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'උදා: නෑ, Phone එක Off, හෙට Call කරන්න කිව්වා...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () async {
+                await dbHelper.updateNote(item['id'] as int, noteController.text);
+                if (!dialogContext.mounted) return;
+                Navigator.pop(dialogContext);
+                _loadPendingCalls();
+              },
+              child: const Text('Save Note'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Dialer-style Tappable Phone Number Row එකක්
+  Widget _phoneRow(String phone, {required Color color}) {
+    if (phone.isEmpty) return const SizedBox.shrink();
+    return InkWell(
+      onTap: () => _makePhoneCall(phone),
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          children: [
+            Icon(Icons.call, size: 16, color: color),
+            const SizedBox(width: 6),
+            Text(
+              phone,
+              style: TextStyle(color: color, fontWeight: FontWeight.w600, decoration: TextDecoration.underline),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Call Attempts ගාණ අනුව Card එකේ Color එක තීරණය කිරීම
+  Color _cardColorForAttempts(int attempts) {
+    if (attempts >= 3) return Colors.red.withOpacity(0.14);
+    if (attempts == 2) return Colors.orange.withOpacity(0.16);
+    if (attempts == 1) return Colors.yellow.withOpacity(0.28);
+    return Colors.white;
+  }
+
+  Color _attemptsTextColor(int attempts) {
+    if (attempts >= 3) return Colors.red[800]!;
+    if (attempts == 2) return Colors.orange[800]!;
+    if (attempts == 1) return Colors.amber[900]!;
+    return Colors.grey;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final filtered = _filteredDeliveries;
-
+    final calls = _filteredCalls;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Reports & Bill Selection'),
+        title: const Text('Pending Calls & WhatsApp'),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadDeliveries, tooltip: 'Refresh'),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadPendingCalls, tooltip: 'Refresh'),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
+      body: Column(
+        children: [
+          // 🔍 Search Bar (නම / Bill No / Phone / Address / Item)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (value) => setState(() => _searchQuery = value),
+              decoration: InputDecoration(
+                hintText: 'Search: නම, Bill No, Phone, Address...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close, size: 20),
+                        onPressed: () => setState(() {
+                          _searchController.clear();
+                          _searchQuery = '';
+                        }),
+                      ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+            ),
+          ),
+          // Date Range Filter (From - To)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
               children: [
-                // 🔍 Search Bar (නම / Bill No / Phone / Address / Item)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: (value) => setState(() => _searchQuery = value),
-                    decoration: InputDecoration(
-                      hintText: 'Search: නම, Bill No, Phone, Address...',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: _searchQuery.isEmpty
-                          ? null
-                          : IconButton(
-                              icon: const Icon(Icons.close, size: 20),
-                              onPressed: () => setState(() {
-                                _searchController.clear();
-                                _searchQuery = '';
-                              }),
-                            ),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                  ),
-                ),
-                // Filter chips (Status)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: _filters.map((filter) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                          child: ChoiceChip(
-                            label: Text(filter),
-                            selected: _selectedFilter == filter,
-                            onSelected: (selected) {
-                              setState(() => _selectedFilter = filter);
-                            },
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ),
-
-                // Date Range Filter (From - To)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _pickDateRange,
-                          icon: const Icon(Icons.date_range, size: 18),
-                          label: Text(
-                            _selectedRange == null
-                                ? 'Date Range (From - To)'
-                                : '${_formatDate(_selectedRange!.start)}  →  ${_formatDate(_selectedRange!.end)}',
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      ),
-                      if (_selectedRange != null)
-                        IconButton(
-                          icon: const Icon(Icons.close, size: 20, color: Colors.grey),
-                          onPressed: _clearDateRange,
-                          tooltip: 'Clear Date Filter',
-                        ),
-                    ],
-                  ),
-                ),
-
-                // Select all row
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Row(
-                    children: [
-                      Checkbox(
-                        value: _allFilteredSelected,
-                        onChanged: (v) => _toggleSelectAll(v ?? false),
-                      ),
-                      Text('Select All ($_selectedFilter — ${filtered.length})'),
-                      const Spacer(),
-                      Text('${_selectedIds.length} selected', style: const TextStyle(color: Colors.grey)),
-                    ],
-                  ),
-                ),
-                const Divider(),
-
-                // Bill list
                 Expanded(
-                  child: filtered.isEmpty
-                      ? const Center(child: Text('මේ filter එකට bills කිසිවක් නැත.'))
-                      : ListView.builder(
-                          itemCount: filtered.length,
-                          itemBuilder: (context, index) {
-                            final d = filtered[index];
-                            final id = d['id'] as int;
-                            final isSelected = _selectedIds.contains(id);
-                            final phone2 = (d['phone2'] ?? '').toString();
-                            return ListTile(
-                              leading: Checkbox(
-                                value: isSelected,
-                                onChanged: (checked) {
-                                  setState(() {
-                                    if (checked == true) {
-                                      _selectedIds.add(id);
-                                    } else {
-                                      _selectedIds.remove(id);
-                                    }
-                                  });
-                                },
-                              ),
-                              title: Text('${d['customerName'] ?? ''}  •  Bill: ${d['billNumber'] ?? '-'}',
-                                  style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text(
-                                '${d['address'] ?? ''}\nPhone: ${d['phone'] ?? ''}${phone2.isNotEmpty ? ', $phone2' : ''}  •  COD: Rs. ${d['codAmount'] ?? '0'}',
-                              ),
-                              isThreeLine: true,
-                              trailing: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                mainAxisSize: MainAxisSize.min,
+                  child: OutlinedButton.icon(
+                    onPressed: _pickDateRange,
+                    icon: const Icon(Icons.date_range, size: 18),
+                    label: Text(
+                      _selectedRange == null
+                          ? 'Date Range (From - To)'
+                          : '${_formatDate(_selectedRange!.start)}  →  ${_formatDate(_selectedRange!.end)}',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ),
+                if (_selectedRange != null)
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20, color: Colors.grey),
+                    onPressed: _clearDateRange,
+                    tooltip: 'Clear Date Filter',
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : calls.isEmpty
+                    ? const Center(child: Text('Pending calls කිසිවක් නැත.'))
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16.0),
+                        itemCount: calls.length,
+                        itemBuilder: (context, index) {
+                          final call = calls[index];
+                          final name = (call['customerName'] ?? '').toString();
+                          final phone1 = (call['phone'] ?? '').toString();
+                          final phone2 = (call['phone2'] ?? '').toString();
+                          final address = (call['address'] ?? '').toString();
+                          final itemName = (call['itemName'] ?? 'Parcel').toString();
+                          final codAmount = (call['codAmount'] ?? '0').toString();
+                          final attempts = (call['callAttempts'] ?? 0) as int;
+                          final note = (call['notes'] ?? '').toString();
+
+                          return Card(
+                            color: _cardColorForAttempts(attempts),
+                            margin: const EdgeInsets.only(bottom: 12.0),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  _statusBadge((d['status'] ?? 'pending').toString()),
                                   Row(
-                                    mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      // Status එක Manual ලෙස Revert/Change කරන්න - Mistake එකක් නම් මෙතනින් Fix කරගන්න
-                                      PopupMenuButton<String>(
-                                        icon: const Icon(Icons.sync_alt, size: 18, color: Colors.grey),
-                                        tooltip: 'Change Status',
-                                        padding: EdgeInsets.zero,
-                                        onSelected: (v) => _changeStatus(d, v),
-                                        itemBuilder: (context) => const [
-                                          PopupMenuItem(value: 'pending', child: Text('Mark as Pending')),
-                                          PopupMenuItem(value: 'confirmed', child: Text('Mark as Confirmed')),
-                                          PopupMenuItem(value: 'delivered', child: Text('Mark as Delivered')),
-                                          PopupMenuItem(value: 'returned', child: Text('Mark as Returned')),
-                                          PopupMenuItem(value: 'cancelled', child: Text('Mark as Cancelled')),
-                                        ],
+                                      Expanded(
+                                        child: Text(name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                                       ),
+                                      if (attempts > 0)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: _attemptsTextColor(attempts).withOpacity(0.15),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            'Attempts: $attempts',
+                                            style: TextStyle(color: _attemptsTextColor(attempts), fontWeight: FontWeight.bold, fontSize: 12),
+                                          ),
+                                        ),
                                       IconButton(
-                                        icon: const Icon(Icons.edit, size: 18, color: Colors.grey),
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(),
-                                        onPressed: () => _editDelivery(d),
+                                        icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                                        onPressed: () => _editDelivery(call),
                                         tooltip: 'Edit',
                                       ),
                                     ],
                                   ),
+                                  const SizedBox(height: 2),
+                                  Text('Item: $itemName  •  Price (COD): Rs. $codAmount'),
+                                  Text('Address: $address'),
+                                  const SizedBox(height: 4),
+                                  _phoneRow(phone1, color: Colors.blue),
+                                  _phoneRow(phone2, color: Colors.indigo),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.chat, color: Colors.green),
+                                        onPressed: () async {
+                                          final msg = await _buildMessage(call);
+                                          await _sendWhatsAppAndConfirm(call, phone1.isNotEmpty ? phone1 : phone2, msg);
+                                        },
+                                        tooltip: 'Quick WhatsApp',
+                                      ),
+                                      IconButton(
+                                        icon: Icon(Icons.note_add_outlined, color: note.isNotEmpty ? Colors.deepPurple : Colors.grey),
+                                        onPressed: () => _showNoteDialog(call),
+                                        tooltip: 'Add Note',
+                                      ),
+                                      const Spacer(),
+                                      TextButton(
+                                        onPressed: () => _updateStatus(call, 'pending'),
+                                        child: const Text('No Answer'),
+                                      ),
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                                        onPressed: () => _showConfirmDialog(call),
+                                        child: const Text('Confirm'),
+                                      ),
+                                    ],
+                                  ),
+                                  if (note.isNotEmpty) ...[
+                                    const Divider(height: 16),
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Icon(Icons.sticky_note_2_outlined, size: 16, color: Colors.deepPurple),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            note,
+                                            style: const TextStyle(fontSize: 13, color: Colors.deepPurple, fontStyle: FontStyle.italic),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ],
                               ),
-                            );
-                          },
-                        ),
-                ),
-
-                // Generate PDF button
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(double.infinity, 55),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                    onPressed: _selectedIds.isEmpty ? null : _generatePdf,
-                    icon: const Icon(Icons.picture_as_pdf),
-                    label: Text('Generate PDF (${_selectedIds.length} selected)', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ],
-            ),
-    );
-  }
-
-  Widget _statusBadge(String status) {
-    Color color;
-    switch (status.toLowerCase()) {
-      case 'delivered':
-        color = Colors.green;
-        break;
-      case 'returned':
-        color = Colors.red;
-        break;
-      case 'cancelled':
-        color = Colors.black54;
-        break;
-      case 'confirmed':
-        color = Colors.blue;
-        break;
-      case 'rescheduled':
-        color = Colors.orange;
-        break;
-      default:
-        color = Colors.grey;
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
-      child: Text(status.toUpperCase(), style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
     );
   }
 }
