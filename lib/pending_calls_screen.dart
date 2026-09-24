@@ -15,6 +15,7 @@ class PendingCallsScreen extends StatefulWidget {
 class _PendingCallsScreenState extends State<PendingCallsScreen> {
   final DatabaseHelper dbHelper = DatabaseHelper.instance;
   List<Map<String, dynamic>> pendingCalls = [];
+  DateTimeRange? _selectedRange;
   bool _isLoading = true;
 
   final String _defaultMsg =
@@ -36,6 +37,36 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
       _isLoading = false;
     });
   }
+
+  // User Select කරපු Date Range එකට අනුව List එක Filter කිරීම (Entry කරපු දිනය අනුව)
+  List<Map<String, dynamic>> get _filteredCalls {
+    if (_selectedRange == null) return pendingCalls;
+    final startMs = DateTime(_selectedRange!.start.year, _selectedRange!.start.month, _selectedRange!.start.day)
+        .millisecondsSinceEpoch;
+    final endMs = DateTime(_selectedRange!.end.year, _selectedRange!.end.month, _selectedRange!.end.day, 23, 59, 59)
+        .millisecondsSinceEpoch;
+    return pendingCalls.where((c) {
+      final ts = (c['timestamp'] ?? 0) as int;
+      return ts >= startMs && ts <= endMs;
+    }).toList();
+  }
+
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 1, 1, 1),
+      lastDate: now.add(const Duration(days: 30)),
+      initialDateRange: _selectedRange ?? DateTimeRange(start: now, end: now),
+    );
+    if (picked != null) {
+      setState(() => _selectedRange = picked);
+    }
+  }
+
+  void _clearDateRange() => setState(() => _selectedRange = null);
+
+  String _formatDate(DateTime d) => '${d.day}/${d.month}/${d.year}';
 
   // දුරකථන ඇමතුමක් ලබා දීම (Dialer) - Phone 1 හෝ Phone 2 ඕනෑම එකකට
   Future<void> _makePhoneCall(String phoneNumber) async {
@@ -66,8 +97,6 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
   }
 
   // Sri Lankan local format (07XXXXXXXX) එක WhatsApp ට ඕන International format (94XXXXXXXXX) එකට convert කිරීම
-  // wa.me links වැඩ කරන්නේ මේ format එකෙන් විතරයි - නැත්නම් Number එකට කෙළින්ම Chat එක open වෙන්නේ නැතුව
-  // WhatsApp එකේ Contact Picker / Home Screen එකට Fallback වෙනවා
   String _toWhatsAppFormat(String phone) {
     String p = phone.trim().replaceAll(' ', '').replaceAll('-', '');
     if (p.startsWith('+94')) return p.substring(1);
@@ -180,7 +209,6 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
               actions: [
                 TextButton(
                   onPressed: () async {
-                    // WhatsApp නැතුව Confirm විතරක් කරන්න ඕන අයට
                     Navigator.pop(dialogContext);
                     await _updateStatus(item, 'confirmed');
                   },
@@ -295,7 +323,6 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
   }
 
   // Call Attempts ගාණ අනුව Card එකේ Color එක තීරණය කිරීම
-  // 1 වෙනි No Answer - Yellow, 2 වෙනි - Orange, 3+ - Red
   Color _cardColorForAttempts(int attempts) {
     if (attempts >= 3) return Colors.red.withOpacity(0.14);
     if (attempts == 2) return Colors.orange.withOpacity(0.16);
@@ -312,6 +339,7 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final calls = _filteredCalls;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Pending Calls & WhatsApp'),
@@ -319,113 +347,144 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
           IconButton(icon: const Icon(Icons.refresh), onPressed: _loadPendingCalls, tooltip: 'Refresh'),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : pendingCalls.isEmpty
-              ? const Center(child: Text('Pending calls කිසිවක් නැත.'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16.0),
-                  itemCount: pendingCalls.length,
-                  itemBuilder: (context, index) {
-                    final call = pendingCalls[index];
-                    final name = (call['customerName'] ?? '').toString();
-                    final phone1 = (call['phone'] ?? '').toString();
-                    final phone2 = (call['phone2'] ?? '').toString();
-                    final address = (call['address'] ?? '').toString();
-                    final itemName = (call['itemName'] ?? 'Parcel').toString();
-                    final codAmount = (call['codAmount'] ?? '0').toString();
-                    final attempts = (call['callAttempts'] ?? 0) as int;
-                    final note = (call['notes'] ?? '').toString();
+      body: Column(
+        children: [
+          // Date Range Filter (From - To)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pickDateRange,
+                    icon: const Icon(Icons.date_range, size: 18),
+                    label: Text(
+                      _selectedRange == null
+                          ? 'Date Range (From - To)'
+                          : '${_formatDate(_selectedRange!.start)}  →  ${_formatDate(_selectedRange!.end)}',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ),
+                if (_selectedRange != null)
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20, color: Colors.grey),
+                    onPressed: _clearDateRange,
+                    tooltip: 'Clear Date Filter',
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : calls.isEmpty
+                    ? const Center(child: Text('Pending calls කිසිවක් නැත.'))
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16.0),
+                        itemCount: calls.length,
+                        itemBuilder: (context, index) {
+                          final call = calls[index];
+                          final name = (call['customerName'] ?? '').toString();
+                          final phone1 = (call['phone'] ?? '').toString();
+                          final phone2 = (call['phone2'] ?? '').toString();
+                          final address = (call['address'] ?? '').toString();
+                          final itemName = (call['itemName'] ?? 'Parcel').toString();
+                          final codAmount = (call['codAmount'] ?? '0').toString();
+                          final attempts = (call['callAttempts'] ?? 0) as int;
+                          final note = (call['notes'] ?? '').toString();
 
-                    return Card(
-                      color: _cardColorForAttempts(attempts),
-                      margin: const EdgeInsets.only(bottom: 12.0),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                                ),
-                                if (attempts > 0)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: _attemptsTextColor(attempts).withOpacity(0.15),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      'Attempts: $attempts',
-                                      style: TextStyle(color: _attemptsTextColor(attempts), fontWeight: FontWeight.bold, fontSize: 12),
-                                    ),
-                                  ),
-                                IconButton(
-                                  icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
-                                  onPressed: () => _editDelivery(call),
-                                  tooltip: 'Edit',
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            Text('Item: $itemName  •  Price (COD): Rs. $codAmount'),
-                            Text('Address: $address'),
-                            const SizedBox(height: 4),
-                            _phoneRow(phone1, color: Colors.blue),
-                            _phoneRow(phone2, color: Colors.indigo),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.chat, color: Colors.green),
-                                  onPressed: () async {
-                                    final msg = await _buildMessage(call);
-                                    await _sendWhatsAppAndConfirm(call, phone1.isNotEmpty ? phone1 : phone2, msg);
-                                  },
-                                  tooltip: 'Quick WhatsApp',
-                                ),
-                                IconButton(
-                                  icon: Icon(Icons.note_add_outlined, color: note.isNotEmpty ? Colors.deepPurple : Colors.grey),
-                                  onPressed: () => _showNoteDialog(call),
-                                  tooltip: 'Add Note',
-                                ),
-                                const Spacer(),
-                                TextButton(
-                                  onPressed: () => _updateStatus(call, 'pending'),
-                                  child: const Text('No Answer'),
-                                ),
-                                ElevatedButton(
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                                  onPressed: () => _showConfirmDialog(call),
-                                  child: const Text('Confirm'),
-                                ),
-                              ],
-                            ),
-                            // Note එකක් Save කරලා තියෙනවා නම් Card එකේ පහළින්ම පෙන්නනවා
-                            if (note.isNotEmpty) ...[
-                              const Divider(height: 16),
-                              Row(
+                          return Card(
+                            color: _cardColorForAttempts(attempts),
+                            margin: const EdgeInsets.only(bottom: 12.0),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Icon(Icons.sticky_note_2_outlined, size: 16, color: Colors.deepPurple),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      note,
-                                      style: const TextStyle(fontSize: 13, color: Colors.deepPurple, fontStyle: FontStyle.italic),
-                                    ),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                      ),
+                                      if (attempts > 0)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: _attemptsTextColor(attempts).withOpacity(0.15),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            'Attempts: $attempts',
+                                            style: TextStyle(color: _attemptsTextColor(attempts), fontWeight: FontWeight.bold, fontSize: 12),
+                                          ),
+                                        ),
+                                      IconButton(
+                                        icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                                        onPressed: () => _editDelivery(call),
+                                        tooltip: 'Edit',
+                                      ),
+                                    ],
                                   ),
+                                  const SizedBox(height: 2),
+                                  Text('Item: $itemName  •  Price (COD): Rs. $codAmount'),
+                                  Text('Address: $address'),
+                                  const SizedBox(height: 4),
+                                  _phoneRow(phone1, color: Colors.blue),
+                                  _phoneRow(phone2, color: Colors.indigo),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.chat, color: Colors.green),
+                                        onPressed: () async {
+                                          final msg = await _buildMessage(call);
+                                          await _sendWhatsAppAndConfirm(call, phone1.isNotEmpty ? phone1 : phone2, msg);
+                                        },
+                                        tooltip: 'Quick WhatsApp',
+                                      ),
+                                      IconButton(
+                                        icon: Icon(Icons.note_add_outlined, color: note.isNotEmpty ? Colors.deepPurple : Colors.grey),
+                                        onPressed: () => _showNoteDialog(call),
+                                        tooltip: 'Add Note',
+                                      ),
+                                      const Spacer(),
+                                      TextButton(
+                                        onPressed: () => _updateStatus(call, 'pending'),
+                                        child: const Text('No Answer'),
+                                      ),
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                                        onPressed: () => _showConfirmDialog(call),
+                                        child: const Text('Confirm'),
+                                      ),
+                                    ],
+                                  ),
+                                  if (note.isNotEmpty) ...[
+                                    const Divider(height: 16),
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Icon(Icons.sticky_note_2_outlined, size: 16, color: Colors.deepPurple),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            note,
+                                            style: const TextStyle(fontSize: 13, color: Colors.deepPurple, fontStyle: FontStyle.italic),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ],
                               ),
-                            ],
-                          ],
-                        ),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
+          ),
+        ],
+      ),
     );
   }
 }
