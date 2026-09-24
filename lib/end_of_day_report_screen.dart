@@ -21,12 +21,22 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
   DateTimeRange? _selectedRange;
   bool _isLoading = true;
 
+  // 🔍 Search Bar සඳහා
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
   final List<String> _filters = ['All', 'Pending', 'Confirmed', 'Delivered', 'Returned', 'Cancelled', 'Rescheduled'];
 
   @override
   void initState() {
     super.initState();
     _loadDeliveries();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadDeliveries() async {
@@ -98,6 +108,19 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
       }).toList();
     }
 
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      list = list.where((d) {
+        final name = (d['customerName'] ?? '').toString().toLowerCase();
+        final bill = (d['billNumber'] ?? '').toString().toLowerCase();
+        final phone1 = (d['phone'] ?? '').toString().toLowerCase();
+        final phone2 = (d['phone2'] ?? '').toString().toLowerCase();
+        final address = (d['address'] ?? '').toString().toLowerCase();
+        final item = (d['itemName'] ?? '').toString().toLowerCase();
+        return name.contains(q) || bill.contains(q) || phone1.contains(q) || phone2.contains(q) || address.contains(q) || item.contains(q);
+      }).toList();
+    }
+
     return list;
   }
 
@@ -136,7 +159,7 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
 
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
+        pageFormat: PdfPageFormat.a4.landscape,
         margin: const pw.EdgeInsets.all(24),
         build: (pw.Context context) {
           return [
@@ -165,11 +188,24 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
                 (d['codAmount'] ?? '').toString(),
                 (d['status'] ?? 'pending').toString().toUpperCase(),
               ]).toList(),
-              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.white),
               headerDecoration: const pw.BoxDecoration(color: PdfColors.deepPurple),
-              cellHeight: 24,
-              cellStyle: const pw.TextStyle(fontSize: 9),
+              // ⚠️ Fix: කලින් cellHeight: 24 ලෙස Fixed කරලා තිබ්බ නිසා Address වගේ දිග Text
+              // ඊළඟ පේළියේ Data එක උඩින්ම Overlap වුනා. දැන් Row එකේ උස Content එක අනුව Auto-Calculate වෙනවා.
+              cellStyle: const pw.TextStyle(fontSize: 8.5),
               cellAlignment: pw.Alignment.centerLeft,
+              cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 5),
+              border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+              // Column එක් එක් වගේ අන්තර්ගතයට ගැලපෙන ලෙස Width එක Proportionally බෙදීම
+              columnWidths: const {
+                0: pw.FlexColumnWidth(1.3), // Bill No
+                1: pw.FlexColumnWidth(1.8), // Name
+                2: pw.FlexColumnWidth(1.4), // Phone
+                3: pw.FlexColumnWidth(3.4), // Address (දිග ම Field එක)
+                4: pw.FlexColumnWidth(1.8), // Item
+                5: pw.FlexColumnWidth(1.0), // COD
+                6: pw.FlexColumnWidth(1.2), // Status
+              },
             ),
           ];
         },
@@ -198,6 +234,30 @@ class _EndOfDayReportScreenState extends State<EndOfDayReportScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                // 🔍 Search Bar (නම / Bill No / Phone / Address / Item)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (value) => setState(() => _searchQuery = value),
+                    decoration: InputDecoration(
+                      hintText: 'Search: නම, Bill No, Phone, Address...',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchQuery.isEmpty
+                          ? null
+                          : IconButton(
+                              icon: const Icon(Icons.close, size: 20),
+                              onPressed: () => setState(() {
+                                _searchController.clear();
+                                _searchQuery = '';
+                              }),
+                            ),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                  ),
+                ),
                 // Filter chips (Status)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
