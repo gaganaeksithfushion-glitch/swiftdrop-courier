@@ -18,6 +18,10 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
   DateTimeRange? _selectedRange;
   bool _isLoading = true;
 
+  // 🔍 Search Bar සඳහා
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
   final String _defaultMsg =
       "ආයුබෝවන් {name}, ඔබගේ පාර්සලය (COD: Rs.{cod}) අද දිනයේ බෙදා හැරීමට නියමිතයි. කරුණාකර ඔබගේ Location එක එවන්න.";
 
@@ -25,6 +29,12 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
   void initState() {
     super.initState();
     _loadPendingCalls();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   // Database එකෙන් අදට Pending/Rescheduled Calls ටික load කිරීම
@@ -38,17 +48,35 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
     });
   }
 
-  // User Select කරපු Date Range එකට අනුව List එක Filter කිරීම (Entry කරපු දිනය අනුව)
+  // User Select කරපු Date Range එකට, සහ Search Query එකට අනුව List එක Filter කිරීම
   List<Map<String, dynamic>> get _filteredCalls {
-    if (_selectedRange == null) return pendingCalls;
-    final startMs = DateTime(_selectedRange!.start.year, _selectedRange!.start.month, _selectedRange!.start.day)
-        .millisecondsSinceEpoch;
-    final endMs = DateTime(_selectedRange!.end.year, _selectedRange!.end.month, _selectedRange!.end.day, 23, 59, 59)
-        .millisecondsSinceEpoch;
-    return pendingCalls.where((c) {
-      final ts = (c['timestamp'] ?? 0) as int;
-      return ts >= startMs && ts <= endMs;
-    }).toList();
+    var list = pendingCalls;
+
+    if (_selectedRange != null) {
+      final startMs = DateTime(_selectedRange!.start.year, _selectedRange!.start.month, _selectedRange!.start.day)
+          .millisecondsSinceEpoch;
+      final endMs = DateTime(_selectedRange!.end.year, _selectedRange!.end.month, _selectedRange!.end.day, 23, 59, 59)
+          .millisecondsSinceEpoch;
+      list = list.where((c) {
+        final ts = (c['timestamp'] ?? 0) as int;
+        return ts >= startMs && ts <= endMs;
+      }).toList();
+    }
+
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      list = list.where((c) {
+        final name = (c['customerName'] ?? '').toString().toLowerCase();
+        final bill = (c['billNumber'] ?? '').toString().toLowerCase();
+        final phone1 = (c['phone'] ?? '').toString().toLowerCase();
+        final phone2 = (c['phone2'] ?? '').toString().toLowerCase();
+        final address = (c['address'] ?? '').toString().toLowerCase();
+        final item = (c['itemName'] ?? '').toString().toLowerCase();
+        return name.contains(q) || bill.contains(q) || phone1.contains(q) || phone2.contains(q) || address.contains(q) || item.contains(q);
+      }).toList();
+    }
+
+    return list;
   }
 
   Future<void> _pickDateRange() async {
@@ -349,6 +377,30 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
       ),
       body: Column(
         children: [
+          // 🔍 Search Bar (නම / Bill No / Phone / Address / Item)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (value) => setState(() => _searchQuery = value),
+              decoration: InputDecoration(
+                hintText: 'Search: නම, Bill No, Phone, Address...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close, size: 20),
+                        onPressed: () => setState(() {
+                          _searchController.clear();
+                          _searchQuery = '';
+                        }),
+                      ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+            ),
+          ),
           // Date Range Filter (From - To)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
