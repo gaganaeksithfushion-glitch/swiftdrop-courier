@@ -16,6 +16,11 @@ workflows:
           # Flutter project එකට නැතිවුණු android ෆෝල්ඩරය නැවත සාදා ගැනීම
           flutter create . --platforms=android
           flutter pub get
+
+          # flutter_plugin_android_lifecycle (file_picker ඇතුළත් plugins) requirement එකට,
+          # compileSdk එක 36ට force කරනවා (auto-generated build.gradle.kts එකේ default එක 34/35 නිසා)
+          sed -i '' 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle.kts
+
           flutter build appbundle --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
           flutter build apk --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
     artifacts:
