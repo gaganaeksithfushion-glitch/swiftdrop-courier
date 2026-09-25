@@ -17,9 +17,22 @@ workflows:
           flutter create . --platforms=android
           flutter pub get
 
-          # flutter_plugin_android_lifecycle (file_picker ඇතුළත් plugins) requirement එකට,
-          # compileSdk එක 36ට force කරනවා (auto-generated build.gradle.kts එකේ default එක 34/35 නිසා)
+          # App module (android/app) compileSdk එක 36ට force කරනවා
           sed -i '' 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle.kts
+
+          # file_picker වගේ Plugin/Library modules ටත් compileSdk 36ට force කරනවා
+          # (flutter_plugin_android_lifecycle requirement එකට, plugin එකේම build.gradle එකට
+          # අපිට access නැති නිසා, root build.gradle.kts එකෙන් subprojects ඔක්කොම override කරනවා)
+          cat >> android/build.gradle.kts << 'EOF'
+
+subprojects {
+    plugins.withId("com.android.library") {
+        extensions.configure<com.android.build.gradle.LibraryExtension> {
+            compileSdk = 36
+        }
+    }
+}
+EOF
 
           flutter build appbundle --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
           flutter build apk --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
