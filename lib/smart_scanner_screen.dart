@@ -4,7 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:syncfusion_flutter_pdf/pdf.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart' as syncfusion;
 import 'database_helper.dart';
 import 'google_places_service.dart';
 
@@ -114,8 +114,8 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
       setState(() => _isParsingPdf = true);
 
       final bytes = result.files.single.bytes!;
-      final document = PdfDocument(inputBytes: bytes);
-      final fullText = PdfTextExtractor(document).extractText();
+      final document = syncfusion.PdfDocument(inputBytes: bytes);
+      final fullText = syncfusion.PdfTextExtractor(document).extractText();
       document.dispose();
 
       final rows = _parseReportRows(fullText);
