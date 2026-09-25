@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'database_helper.dart';
 import 'smart_scanner_screen.dart';
 import 'google_places_service.dart';
@@ -22,6 +23,10 @@ class _RouteListScreenState extends State<RouteListScreen> {
   // 🔍 Search Bar සඳහා
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+
+  // Call Center එකට යවන "No Answer" පණිවිඩයේ Default Template එක
+  final String _defaultNoAnswerMsg =
+      "Bill No: {bill}\nName: {name}\nItem: {item}\nPhone: {phone}\nnot responding at location.";
 
   @override
   void initState() {
@@ -108,6 +113,75 @@ class _RouteListScreenState extends State<RouteListScreen> {
     if (await canLaunchUrl(launchUri)) {
       await launchUrl(launchUri);
     }
+  }
+
+  // Sri Lankan local format (07XXXXXXXX) එක WhatsApp ට ඕන International format (94XXXXXXXXX) එකට convert කිරීම
+  String _toWhatsAppFormat(String phone) {
+    String p = phone.trim().replaceAll(' ', '').replaceAll('-', '');
+    if (p.startsWith('+94')) return p.substring(1);
+    if (p.startsWith('94') && p.length == 11) return p;
+    if (p.startsWith('0')) return '94${p.substring(1)}';
+    return p;
+  }
+
+  // Call Center එකට "No Answer" WhatsApp Message එකක් යැවීම (Bill No, Name, Item, Phone සමග)
+  Future<void> _notifyCallCenterNoAnswer(Map<String, dynamic> item) async {
+    final prefs = await SharedPreferences.getInstance();
+    final callCenterNumber = (prefs.getString('call_center_whatsapp') ?? '').trim();
+
+    if (callCenterNumber.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Call Center WhatsApp Number එක Settings එකේ දාලා නෑ! කරුණාකර Settings > Call Center Number එකතු කරන්න.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    String template = prefs.getString('route_no_answer_template') ?? _defaultNoAnswerMsg;
+    final bill = (item['billNumber'] ?? '-').toString();
+    final name = (item['customerName'] ?? '-').toString();
+    final itemName = (item['itemName'] ?? '-').toString();
+    final phone1 = (item['phone'] ?? '').toString();
+    final phone2 = (item['phone2'] ?? '').toString();
+    final phone = phone1.isNotEmpty ? phone1 : phone2;
+
+    template = template
+        .replaceAll('{bill}', bill)
+        .replaceAll('{name}', name)
+        .replaceAll('{item}', itemName)
+        .replaceAll('{phone}', phone.isEmpty ? '-' : phone);
+
+    final formattedPhone = _toWhatsAppFormat(callCenterNumber);
+    final encodedMessage = Uri.encodeComponent(template);
+    final Uri whatsappUri = Uri.parse('https://wa.me/$formattedPhone?text=$encodedMessage');
+
+    if (await canLaunchUrl(whatsappUri)) {
+      await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('WhatsApp නොමැත හෝ විවෘත කරගත නොහැක.'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  // "No Answer" Button එක Click කරාම: Status එක Pending කරලා (Attempt +1), Call Center එකටත් Notify කරනවා
+  Future<void> _handleNoAnswer(Map<String, dynamic> item) async {
+    final id = item['id'] as int;
+    final attempts = (item['callAttempts'] ?? 0) as int;
+    await dbHelper.updateDeliveryStatus(id, 'pending', attempts + 1);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No Answer ලෙස සටහන් විය, Pending එකට මාරු විය!'), backgroundColor: Colors.orange),
+      );
+    }
+    await _notifyCallCenterNoAnswer(item);
+    _loadDeliveries();
   }
 
   Future<void> _editDelivery(Map<String, dynamic> item) async {
@@ -648,6 +722,11 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                               tooltip: 'Reschedule',
                                             ),
                                             const Spacer(),
+                                            TextButton(
+                                              onPressed: () => _handleNoAnswer(item),
+                                              child: const Text('No Answer'),
+                                            ),
+                                            const SizedBox(width: 4),
                                             ElevatedButton(
                                               onPressed: () => _changeStatus(item, 'delivered'),
                                               child: const Text('Delivered'),
