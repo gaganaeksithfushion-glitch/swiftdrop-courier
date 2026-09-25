@@ -118,6 +118,22 @@ class _RouteListScreenState extends State<RouteListScreen> {
     if (result == true) _loadDeliveries();
   }
 
+  // Call Attempts ගාණ අනුව Card එකේ Color එක තීරණය කිරීම
+  // 1st attempt -> #FFFF00 (Yellow) | 2nd attempt -> #FFB343 (Orange) | 3rd+ attempt -> #ee6b6e (Red)
+  Color _cardColorForAttempts(int attempts) {
+    if (attempts >= 3) return const Color(0xFFee6b6e).withOpacity(0.2);
+    if (attempts == 2) return const Color(0xFFFFB343).withOpacity(0.25);
+    if (attempts == 1) return const Color(0xFFFFFF00).withOpacity(0.35);
+    return Colors.white;
+  }
+
+  Color _attemptsTextColor(int attempts) {
+    if (attempts >= 3) return const Color(0xFFc93b3e);
+    if (attempts == 2) return const Color(0xFFd98214);
+    if (attempts == 1) return const Color(0xFF998800);
+    return Colors.grey;
+  }
+
   // Order එකේ Status එක Manual ලෙස වෙනස් කිරීම (Delivered / Returned / Cancelled / Pending ආදී)
   Future<void> _changeStatus(Map<String, dynamic> item, String newStatus) async {
     final id = item['id'] as int;
@@ -489,9 +505,11 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                 final customerName = (item['customerName'] ?? '').toString();
                                 final id = item['id'] as int;
                                 final hasLocation = item['lat'] != null && item['lng'] != null;
+                                final attempts = (item['callAttempts'] ?? 0) as int;
 
                                 return Card(
                                   key: ValueKey(id),
+                                  color: _cardColorForAttempts(attempts),
                                   margin: const EdgeInsets.only(bottom: 12.0),
                                   child: Padding(
                                     padding: const EdgeInsets.all(12.0),
@@ -545,6 +563,19 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                                 ],
                                               ),
                                             ),
+                                            if (attempts > 0)
+                                              Container(
+                                                margin: const EdgeInsets.only(right: 4),
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                decoration: BoxDecoration(
+                                                  color: _attemptsTextColor(attempts).withOpacity(0.15),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: Text(
+                                                  'Attempts: $attempts',
+                                                  style: TextStyle(color: _attemptsTextColor(attempts), fontWeight: FontWeight.bold, fontSize: 12),
+                                                ),
+                                              ),
                                             IconButton(
                                               icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
                                               onPressed: () => _editDelivery(item),
