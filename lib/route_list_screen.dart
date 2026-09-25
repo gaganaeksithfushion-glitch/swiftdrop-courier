@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'database_helper.dart';
 import 'smart_scanner_screen.dart';
 import 'google_places_service.dart';
@@ -23,10 +22,6 @@ class _RouteListScreenState extends State<RouteListScreen> {
   // 🔍 Search Bar සඳහා
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-
-  // Call Center එකට යවන "No Answer" පණිවිඩයේ Default Template එක
-  final String _defaultNoAnswerMsg =
-      "Bill No: {bill}\nName: {name}\nItem: {item}\nPhone: {phone}\nnot responding at location.";
 
   @override
   void initState() {
@@ -115,97 +110,12 @@ class _RouteListScreenState extends State<RouteListScreen> {
     }
   }
 
-  // Sri Lankan local format (07XXXXXXXX) එක WhatsApp ට ඕන International format (94XXXXXXXXX) එකට convert කිරීම
-  String _toWhatsAppFormat(String phone) {
-    String p = phone.trim().replaceAll(' ', '').replaceAll('-', '');
-    if (p.startsWith('+94')) return p.substring(1);
-    if (p.startsWith('94') && p.length == 11) return p;
-    if (p.startsWith('0')) return '94${p.substring(1)}';
-    return p;
-  }
-
-  // Call Center එකට "No Answer" WhatsApp Message එකක් යැවීම (Bill No, Name, Item, Phone සමග)
-  Future<void> _notifyCallCenterNoAnswer(Map<String, dynamic> item) async {
-    final prefs = await SharedPreferences.getInstance();
-    final callCenterNumber = (prefs.getString('call_center_whatsapp') ?? '').trim();
-
-    if (callCenterNumber.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Call Center WhatsApp Number එක Settings එකේ දාලා නෑ! කරුණාකර Settings > Call Center Number එකතු කරන්න.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return;
-    }
-
-    String template = prefs.getString('route_no_answer_template') ?? _defaultNoAnswerMsg;
-    final bill = (item['billNumber'] ?? '-').toString();
-    final name = (item['customerName'] ?? '-').toString();
-    final itemName = (item['itemName'] ?? '-').toString();
-    final phone1 = (item['phone'] ?? '').toString();
-    final phone2 = (item['phone2'] ?? '').toString();
-    final phone = phone1.isNotEmpty ? phone1 : phone2;
-
-    template = template
-        .replaceAll('{bill}', bill)
-        .replaceAll('{name}', name)
-        .replaceAll('{item}', itemName)
-        .replaceAll('{phone}', phone.isEmpty ? '-' : phone);
-
-    final formattedPhone = _toWhatsAppFormat(callCenterNumber);
-    final encodedMessage = Uri.encodeComponent(template);
-    final Uri whatsappUri = Uri.parse('https://wa.me/$formattedPhone?text=$encodedMessage');
-
-    if (await canLaunchUrl(whatsappUri)) {
-      await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('WhatsApp නොමැත හෝ විවෘත කරගත නොහැක.'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  // "No Answer" Button එක Click කරාම: Status එක Pending කරලා (Attempt +1), Call Center එකටත් Notify කරනවා
-  Future<void> _handleNoAnswer(Map<String, dynamic> item) async {
-    final id = item['id'] as int;
-    final attempts = (item['callAttempts'] ?? 0) as int;
-    await dbHelper.updateDeliveryStatus(id, 'pending', attempts + 1);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No Answer ලෙස සටහන් විය, Pending එකට මාරු විය!'), backgroundColor: Colors.orange),
-      );
-    }
-    await _notifyCallCenterNoAnswer(item);
-    _loadDeliveries();
-  }
-
   Future<void> _editDelivery(Map<String, dynamic> item) async {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => SmartScannerScreen(deliveryToEdit: item)),
     );
     if (result == true) _loadDeliveries();
-  }
-
-  // Call Attempts ගාණ අනුව Card එකේ Color එක තීරණය කිරීම
-  // 1st attempt -> #FFFF00 (Yellow) | 2nd attempt -> #FFB343 (Orange) | 3rd+ attempt -> #ee6b6e (Red)
-  Color _cardColorForAttempts(int attempts) {
-    if (attempts >= 3) return const Color(0xFFee6b6e).withOpacity(0.2);
-    if (attempts == 2) return const Color(0xFFFFB343).withOpacity(0.25);
-    if (attempts == 1) return const Color(0xFFFFFF00).withOpacity(0.35);
-    return Colors.white;
-  }
-
-  Color _attemptsTextColor(int attempts) {
-    if (attempts >= 3) return const Color(0xFFc93b3e);
-    if (attempts == 2) return const Color(0xFFd98214);
-    if (attempts == 1) return const Color(0xFF998800);
-    return Colors.grey;
   }
 
   // Order එකේ Status එක Manual ලෙස වෙනස් කිරීම (Delivered / Returned / Cancelled / Pending ආදී)
@@ -579,11 +489,9 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                 final customerName = (item['customerName'] ?? '').toString();
                                 final id = item['id'] as int;
                                 final hasLocation = item['lat'] != null && item['lng'] != null;
-                                final attempts = (item['callAttempts'] ?? 0) as int;
 
                                 return Card(
                                   key: ValueKey(id),
-                                  color: _cardColorForAttempts(attempts),
                                   margin: const EdgeInsets.only(bottom: 12.0),
                                   child: Padding(
                                     padding: const EdgeInsets.all(12.0),
@@ -637,19 +545,6 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                                 ],
                                               ),
                                             ),
-                                            if (attempts > 0)
-                                              Container(
-                                                margin: const EdgeInsets.only(right: 4),
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                                decoration: BoxDecoration(
-                                                  color: _attemptsTextColor(attempts).withOpacity(0.15),
-                                                  borderRadius: BorderRadius.circular(8),
-                                                ),
-                                                child: Text(
-                                                  'Attempts: $attempts',
-                                                  style: TextStyle(color: _attemptsTextColor(attempts), fontWeight: FontWeight.bold, fontSize: 12),
-                                                ),
-                                              ),
                                             IconButton(
                                               icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
                                               onPressed: () => _editDelivery(item),
@@ -722,11 +617,6 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                               tooltip: 'Reschedule',
                                             ),
                                             const Spacer(),
-                                            TextButton(
-                                              onPressed: () => _handleNoAnswer(item),
-                                              child: const Text('No Answer'),
-                                            ),
-                                            const SizedBox(width: 4),
                                             ElevatedButton(
                                               onPressed: () => _changeStatus(item, 'delivered'),
                                               child: const Text('Delivered'),
