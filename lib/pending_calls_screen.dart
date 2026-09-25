@@ -351,17 +351,18 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
   }
 
   // Call Attempts ගාණ අනුව Card එකේ Color එක තීරණය කිරීම
+  // 1st attempt -> #FFFF00 (Yellow) | 2nd attempt -> #FFB343 (Orange) | 3rd+ attempt -> #ee6b6e (Red)
   Color _cardColorForAttempts(int attempts) {
-    if (attempts >= 3) return Colors.red.withOpacity(0.14);
-    if (attempts == 2) return Colors.orange.withOpacity(0.16);
-    if (attempts == 1) return Colors.yellow.withOpacity(0.28);
+    if (attempts >= 3) return const Color(0xFFee6b6e).withOpacity(0.2);
+    if (attempts == 2) return const Color(0xFFFFB343).withOpacity(0.25);
+    if (attempts == 1) return const Color(0xFFFFFF00).withOpacity(0.35);
     return Colors.white;
   }
 
   Color _attemptsTextColor(int attempts) {
-    if (attempts >= 3) return Colors.red[800]!;
-    if (attempts == 2) return Colors.orange[800]!;
-    if (attempts == 1) return Colors.amber[900]!;
+    if (attempts >= 3) return const Color(0xFFc93b3e);
+    if (attempts == 2) return const Color(0xFFd98214);
+    if (attempts == 1) return const Color(0xFF998800);
     return Colors.grey;
   }
 
