@@ -25,10 +25,6 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
   final String _defaultMsg =
       "ආයුබෝවන් {name}, ඔබගේ පාර්සලය (COD: Rs.{cod}) අද දිනයේ බෙදා හැරීමට නියමිතයි. කරුණාකර ඔබගේ Location එක එවන්න.";
 
-  // Call Center එකට යවන "No Answer" පණිවිඩයේ Default Template එක
-  final String _defaultNoAnswerMsg =
-      "Bill No: {bill}\nName: {name}\nItem: {item}\nPhone: {phone}\nis not responding.";
-
   @override
   void initState() {
     super.initState();
@@ -282,58 +278,6 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
     await _updateStatus(item, 'confirmed');
   }
 
-  // Call Center එකට "No Answer" WhatsApp Message එකක් යැවීම (Bill No, Name, Item, Phone සමග)
-  Future<void> _notifyCallCenterNoAnswer(Map<String, dynamic> item) async {
-    final prefs = await SharedPreferences.getInstance();
-    final callCenterNumber = (prefs.getString('call_center_whatsapp') ?? '').trim();
-
-    if (callCenterNumber.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Call Center WhatsApp Number එක Settings එකේ දාලා නෑ! කරුණාකර Settings > Call Center Number එකතු කරන්න.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return;
-    }
-
-    String template = prefs.getString('no_answer_template') ?? _defaultNoAnswerMsg;
-    final bill = (item['billNumber'] ?? '-').toString();
-    final name = (item['customerName'] ?? '-').toString();
-    final itemName = (item['itemName'] ?? '-').toString();
-    final phone1 = (item['phone'] ?? '').toString();
-    final phone2 = (item['phone2'] ?? '').toString();
-    final phone = phone1.isNotEmpty ? phone1 : phone2;
-
-    template = template
-        .replaceAll('{bill}', bill)
-        .replaceAll('{name}', name)
-        .replaceAll('{item}', itemName)
-        .replaceAll('{phone}', phone.isEmpty ? '-' : phone);
-
-    final formattedPhone = _toWhatsAppFormat(callCenterNumber);
-    final encodedMessage = Uri.encodeComponent(template);
-    final Uri whatsappUri = Uri.parse('https://wa.me/$formattedPhone?text=$encodedMessage');
-
-    if (await canLaunchUrl(whatsappUri)) {
-      await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('WhatsApp නොමැත හෝ විවෘත කරගත නොහැක.'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  // "No Answer" Button එක Click කරාම: Status එක Pending කරලා, Call Center එකටත් Notify කරනවා
-  Future<void> _handleNoAnswer(Map<String, dynamic> item) async {
-    await _updateStatus(item, 'pending');
-    await _notifyCallCenterNoAnswer(item);
-  }
-
   Future<void> _updateStatus(Map<String, dynamic> item, String status) async {
     final id = item['id'] as int;
     final attempts = (item['callAttempts'] ?? 0) as int;
@@ -407,18 +351,17 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
   }
 
   // Call Attempts ගාණ අනුව Card එකේ Color එක තීරණය කිරීම
-  // 1st attempt -> #FFFF00 (Yellow) | 2nd attempt -> #FFB343 (Orange) | 3rd+ attempt -> #ee6b6e (Red)
   Color _cardColorForAttempts(int attempts) {
-    if (attempts >= 3) return const Color(0xFFee6b6e).withOpacity(0.2);
-    if (attempts == 2) return const Color(0xFFFFB343).withOpacity(0.25);
-    if (attempts == 1) return const Color(0xFFFFFF00).withOpacity(0.35);
+    if (attempts >= 3) return Colors.red.withOpacity(0.14);
+    if (attempts == 2) return Colors.orange.withOpacity(0.16);
+    if (attempts == 1) return Colors.yellow.withOpacity(0.28);
     return Colors.white;
   }
 
   Color _attemptsTextColor(int attempts) {
-    if (attempts >= 3) return const Color(0xFFc93b3e);
-    if (attempts == 2) return const Color(0xFFd98214);
-    if (attempts == 1) return const Color(0xFF998800);
+    if (attempts >= 3) return Colors.red[800]!;
+    if (attempts == 2) return Colors.orange[800]!;
+    if (attempts == 1) return Colors.amber[900]!;
     return Colors.grey;
   }
 
@@ -559,7 +502,7 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
                                       ),
                                       const Spacer(),
                                       TextButton(
-                                        onPressed: () => _handleNoAnswer(call),
+                                        onPressed: () => _updateStatus(call, 'pending'),
                                         child: const Text('No Answer'),
                                       ),
                                       ElevatedButton(
