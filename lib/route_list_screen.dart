@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'database_helper.dart';
 import 'smart_scanner_screen.dart';
 import 'google_places_service.dart';
@@ -108,6 +109,140 @@ class _RouteListScreenState extends State<RouteListScreen> {
     if (await canLaunchUrl(launchUri)) {
       await launchUrl(launchUri);
     }
+  }
+
+  // Sri Lankan local format (07XXXXXXXX) එක WhatsApp ට ඕන International format (94XXXXXXXXX) එකට convert කිරීම
+  String _toWhatsAppFormat(String phone) {
+    String p = phone.trim().replaceAll(' ', '').replaceAll('-', '');
+    if (p.startsWith('+94')) return p.substring(1);
+    if (p.startsWith('94') && p.length == 11) return p;
+    if (p.startsWith('0')) return '94${p.substring(1)}';
+    return p;
+  }
+
+  // Settings එකේ Save කරපු Call Center WhatsApp අංකය Load කිරීම
+  Future<String?> _getCallCenterNumber() async {
+    final prefs = await SharedPreferences.getInstance();
+    final number = prefs.getString('call_center_whatsapp');
+    if (number == null || number.trim().isEmpty) return null;
+    return number.trim();
+  }
+
+  // "No Answer at Location" - Note එකක් (Default හෝ Manual) සමග Call Center එකට Report කිරීම
+  // Delivery එකේ Status එක 'pending' ලෙස Update කරලා, ඊළඟ දවසේ Pending Calls Screen එකේ පෙන්නනවා
+  Future<void> _showNoAnswerDialog(Map<String, dynamic> item) async {
+    final noteController = TextEditingController(text: 'Not answered at location');
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('No Answer at Location'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '${item['customerName'] ?? ''}  •  Bill: ${item['billNumber'] ?? '-'}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'මේ Parcel එකේ Details, Call Center WhatsApp අංකයට යැවෙනවා. අවශ්‍ය නම් Note එක වෙනස් කරන්න:',
+                  style: TextStyle(fontSize: 13, color: Colors.grey),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: noteController,
+                  maxLines: 3,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Note (Default: Not answered at location)',
+                    hintText: 'උදා: Location එක වැරදියි, Customer ට Contact වුනේ නෑ...',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange, foregroundColor: Colors.white),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              icon: const Icon(Icons.chat),
+              label: const Text('Send to Call Center'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    final note = noteController.text.trim().isEmpty ? 'Not answered at location' : noteController.text.trim();
+    await _sendNoAnswerToCallCenter(item, note);
+  }
+
+  Future<void> _sendNoAnswerToCallCenter(Map<String, dynamic> item, String note) async {
+    final callCenterNumber = await _getCallCenterNumber();
+    if (callCenterNumber == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Call Center WhatsApp අංකය Settings එකේ Configure කරලා නෑ. Settings > Call Center WhatsApp Number එකට යන්න.'),
+          backgroundColor: Colors.deepPurple,
+        ),
+      );
+      return;
+    }
+
+    final billNo = (item['billNumber'] ?? '').toString();
+    final customerName = (item['customerName'] ?? '').toString();
+    final itemName = (item['itemName'] ?? 'Parcel').toString();
+    final codAmount = (item['codAmount'] ?? '0').toString();
+    final address = (item['address'] ?? '').toString();
+
+    final message = StringBuffer()
+      ..writeln('⚠️ No Answer at Location')
+      ..writeln('Bill No: ${billNo.isEmpty ? '-' : billNo}')
+      ..writeln('Name: $customerName')
+      ..writeln('Item: $itemName')
+      ..writeln('Price (COD): Rs. $codAmount')
+      ..writeln('Address: $address')
+      ..write('Note: $note');
+
+    final formattedPhone = _toWhatsAppFormat(callCenterNumber);
+    final encodedMessage = Uri.encodeComponent(message.toString());
+    final Uri whatsappUri = Uri.parse('https://wa.me/$formattedPhone?text=$encodedMessage');
+
+    if (await canLaunchUrl(whatsappUri)) {
+      await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('WhatsApp නොමැත හෝ විවෘත කරගත නොහැක.'), backgroundColor: Colors.red),
+        );
+      }
+    }
+
+    // Note එක Save කරලා, Status එක 'pending' ලෙස Update කිරීම (Attempts +1)
+    // → ඊළඟ දවසේ Pending Calls Screen එකේ Auto ලෙස පෙන්නනවා
+    final id = item['id'] as int;
+    final attempts = (item['callAttempts'] ?? 0) as int;
+    await dbHelper.updateNote(id, note);
+    await dbHelper.updateDeliveryStatus(id, 'pending', attempts + 1);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Call Center එකට යැව්වා, Parcel එක Pending Calls එකට මාරු කළා!'), backgroundColor: Colors.orange),
+    );
+    _loadDeliveries();
   }
 
   Future<void> _editDelivery(Map<String, dynamic> item) async {
@@ -617,6 +752,13 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                               tooltip: 'Reschedule',
                                             ),
                                             const Spacer(),
+                                            TextButton.icon(
+                                              style: TextButton.styleFrom(foregroundColor: Colors.deepOrange),
+                                              onPressed: () => _showNoAnswerDialog(item),
+                                              icon: const Icon(Icons.phone_disabled, size: 18),
+                                              label: const Text('No Answer'),
+                                            ),
+                                            const SizedBox(width: 6),
                                             ElevatedButton(
                                               onPressed: () => _changeStatus(item, 'delivered'),
                                               child: const Text('Delivered'),
