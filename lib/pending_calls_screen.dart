@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import 'database_helper.dart';
 import 'smart_scanner_screen.dart';
+import 'location_picker_screen.dart';
 
 class PendingCallsScreen extends StatefulWidget {
   const PendingCallsScreen({super.key});
@@ -230,6 +231,28 @@ class _PendingCallsScreenState extends State<PendingCallsScreen> {
                           ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.my_location, color: Colors.blue),
                       label: const Text('Add My Current Location'),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final picked = await Navigator.push<PickedLocation>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => LocationPickerScreen(
+                              initialLat: (item['lat'] as num?)?.toDouble(),
+                              initialLng: (item['lng'] as num?)?.toDouble(),
+                            ),
+                          ),
+                        );
+                        if (picked != null) {
+                          final link = 'https://maps.google.com/?q=${picked.lat},${picked.lng}';
+                          setDialogState(() {
+                            messageController.text = '${messageController.text}\n📍 Delivery Location: $link';
+                          });
+                        }
+                      },
+                      icon: const Icon(Icons.map_outlined, color: Colors.deepPurple),
+                      label: const Text('Pick Location on Map'),
                     ),
                   ],
                 ),
