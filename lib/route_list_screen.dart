@@ -207,11 +207,15 @@ class _RouteListScreenState extends State<RouteListScreen> {
     final itemName = (item['itemName'] ?? 'Parcel').toString();
     final codAmount = (item['codAmount'] ?? '0').toString();
     final address = (item['address'] ?? '').toString();
+    final phone1 = (item['phone'] ?? '').toString();
+    final phone2 = (item['phone2'] ?? '').toString();
+    final phoneLine = [phone1, phone2].where((p) => p.trim().isNotEmpty).join(' / ');
 
     final message = StringBuffer()
       ..writeln('⚠️ No Answer at Location')
       ..writeln('Bill No: ${billNo.isEmpty ? '-' : billNo}')
       ..writeln('Name: $customerName')
+      ..writeln('Phone: ${phoneLine.isEmpty ? '-' : phoneLine}')
       ..writeln('Item: $itemName')
       ..writeln('Price (COD): Rs. $codAmount')
       ..writeln('Address: $address')
