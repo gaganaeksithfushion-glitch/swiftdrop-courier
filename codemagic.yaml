@@ -16,6 +16,10 @@ workflows:
           # Flutter project එකට නැතිවුණු android ෆෝල්ඩරය නැවත සාදා ගැනීම
           flutter create . --platforms=android
           flutter pub get
+          # Google Maps (Location Picker) එකට ඕන API Key එක, AndroidManifest.xml එකේ
+          # Placeholder එක වෙනුවට Real Key එකෙන් Build Time එකේදී Replace කිරීම
+          # (--dart-define එකෙන් Dart Code එකට විතරයි Key එක යන්නේ, Native Manifest එකට යන්නේ නෑ)
+          sed -i "s|GOOGLE_API_KEY_PLACEHOLDER|$GOOGLE_API_KEY|g" android/app/src/main/AndroidManifest.xml
           flutter build appbundle --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
           flutter build apk --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
     artifacts:
