@@ -1,66 +1,71 @@
-plugins {
-    id "com.android.application"
-    id "kotlin-android"
-    id "dev.flutter.flutter-gradle-plugin"
-    id "com.google.gms.google-services"
-}
+workflows:
+  android-release-pipeline:
+    name: ShiftDrop Android Release
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      groups:
+        # ⚠️ Codemagic UI එකේ (App Settings > Environment variables) "google_api" කියලා Group
+        # එකක් හදලා, GOOGLE_API_KEY කියලා Variable එකක් "Secure" ලෙස Mark කරලා Add කරන්න.
+        # Key එක Codemagic UI එකේ Encrypted ලෙසයි Save වෙන්නේ, මේ file එකේ Plain Text එකෙන් නෑ.
+        - google_api
+        # ⚠️ "firebase" කියලා තව Group එකක් හදලා, GOOGLE_SERVICES_JSON කියලා Variable එකක් "Secure"
+        # ලෙස Add කරන්න. Value එක විදිහට, ඔබේ google-services.json File එකේ Base64 Encoded
+        # Content එක දාන්න (Terminal එකේදී: base64 -i google-services.json | pbcopy [Mac] හෝ
+        # base64 -w 0 google-services.json [Linux/Windows Git Bash] කරලා Output එක Copy කරන්න).
+        - firebase
+    scripts:
+      - name: Create Android Native Files and Build
+        script: |
+          # Flutter project එකට නැතිවුණු android ෆෝල්ඩරය නැවත සාදා ගැනීම
+          # (android/app/build.gradle සහ AndroidManifest.xml දැනටමත් Repo එකේ තියෙන නිසා,
+          # flutter create ඒවාට අත ගාන්නේ නෑ - Missing Files (settings.gradle ඇතුළු) විතරයි හදන්නේ)
+          flutter create . --platforms=android
+          flutter pub get
 
-android {
-    // "lk.shiftdrop.courier" කියලා දාලා තියෙන්නේ - මේකම Firebase Console එකේ App Register කරද්දි
-    // Package Name එකට දාන්න. වෙනස් නමක් ඕන නම්, මෙතනත් Firebase එකේත් දෙකේම එකම නම දාන්න.
-    namespace "lk.shiftdrop.courier"
-    compileSdkVersion flutter.compileSdkVersion
-    ndkVersion flutter.ndkVersion
+          # settings.gradle එකේ "com.google.gms.google-services" Plugin එකේ Version එක
+          # flutter create එකෙන් Auto දෙන්නේ නෑ - ඒක නිසා අපිම මේ File එක සම්පූර්ණයෙන්ම
+          # Correct Content එකකින් Overwrite කරනවා (Firebase Build Fail වීම වළක්වන්න)
+          cat > android/settings.gradle << 'EOF'
+          pluginManagement {
+              def flutterSdkPath = {
+                  def properties = new Properties()
+                  file("local.properties").withInputStream { properties.load(it) }
+                  def flutterSdkPath = properties.getProperty("flutter.sdk")
+                  assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
+                  return flutterSdkPath
+              }()
 
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
+              includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
 
-    kotlinOptions {
-        jvmTarget = '1.8'
-    }
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
 
-    defaultConfig {
-        // Firebase Console එකේ Register කරන Package Name එකට Match වෙන්නම ඕන
-        applicationId "lk.shiftdrop.courier"
-        minSdkVersion flutter.minSdkVersion
-        targetSdkVersion flutter.targetSdkVersion
-        // pubspec.yaml එකේ "version: 1.0.0+1" එකෙන් Auto ගන්නවා - Play Store එකට Upload කරන
-        // හැම වතාවකදිම pubspec.yaml එකේ "+1" කොටස වඩන්න, versionCode Hardcode කරන්න එපා
-        versionCode flutter.versionCode
-        versionName flutter.versionName
-        // Firebase + Google Maps + තව Plugins එකතු වෙද්දි 64k Method Limit එකට යවෙන්න පුළුවන් -
-        // කලින්ම Multidex On කරගැනීම
-        multiDexEnabled true
-    }
+          plugins {
+              id "dev.flutter.flutter-plugin-loader" version "1.0.0"
+              id "com.android.application" version "8.3.0" apply false
+              id "org.jetbrains.kotlin.android" version "1.9.24" apply false
+              id "com.google.gms.google-services" version "4.4.2" apply false
+          }
 
-    signingConfigs {
-        release {
-            // ⚠️ TODO: Real Release Keystore එකක් හදලා, පහත Values Codemagic Secure Env Variables
-            // විදිහට (හෝ key.properties File එකකින්) මෙතනට දෙන්න. දැනට Debug Key එකෙන් Sign වුනොත්
-            // Google Play එකට Upload කරන්න බෑ.
-            storeFile file(System.getenv("RELEASE_KEYSTORE_PATH") ?: "debug.keystore")
-            storePassword System.getenv("RELEASE_STORE_PASSWORD") ?: ""
-            keyAlias System.getenv("RELEASE_KEY_ALIAS") ?: ""
-            keyPassword System.getenv("RELEASE_KEY_PASSWORD") ?: ""
-        }
-    }
+          include ":app"
+          EOF
 
-    buildTypes {
-        release {
-            // ⚠️ TODO: Real Keystore එක Setup කරගත්තට පස්සේ, මේක signingConfigs.release ලෙසම තියන්න.
-            // Setup වෙනකම් විතරයි Fallback එකක් විදිහට signingConfigs.debug පාවිච්චි කරන්නේ.
-            signingConfig signingConfigs.debug
-        }
-    }
-}
-
-flutter {
-    source '../..'
-}
-
-dependencies {
-    implementation platform('com.google.firebase:firebase-bom:33.7.0')
-    implementation 'com.google.firebase:firebase-firestore'
-}
+          # Google Maps (Location Picker) එකට ඕන API Key එක, AndroidManifest.xml එකේ
+          # Placeholder එක වෙනුවට Real Key එකෙන් Build Time එකේදී Replace කිරීම
+          # (--dart-define එකෙන් Dart Code එකට විතරයි Key එක යන්නේ, Native Manifest එකට යන්නේ නෑ)
+          sed -i "s|GOOGLE_API_KEY_PLACEHOLDER|$GOOGLE_API_KEY|g" android/app/src/main/AndroidManifest.xml
+          # Firebase එකට ඕන google-services.json File එක, Secure Env Variable එකෙන් Decode කරලා
+          # Correct තැනට (android/app/) Write කිරීම - "flutter create ." එකෙන් Wipe වෙන්නේ නෑ,
+          # මොකද මේක ඒ Command එකට පස්සේ තමයි Run වෙන්නේ
+          echo $GOOGLE_SERVICES_JSON | base64 --decode > android/app/google-services.json
+          flutter build appbundle --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
+          flutter build apk --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
+    artifacts:
+      - build/app/outputs/**/*.aab
+      - build/app/outputs/**/*.apk
