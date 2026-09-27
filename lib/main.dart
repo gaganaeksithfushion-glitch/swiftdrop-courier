@@ -8,6 +8,7 @@ import 'pending_calls_screen.dart';
 import 'route_list_screen.dart';
 import 'end_of_day_report_screen.dart';
 import 'settings_screen.dart';
+import 'map_view_screen.dart';
 
 void main() {
   runApp(const ShiftDropApp());
@@ -188,6 +189,16 @@ class DashboardScreen extends StatelessWidget {
           icon: Icons.map_rounded,
           onTap: () {
             Navigator.push(context, MaterialPageRoute(builder: (context) => const RouteListScreen()));
+          },
+        ),
+        const SizedBox(height: 16),
+        _buildDashboardCard(
+          context,
+          title: 'Live Map & Proximity',
+          subtitle: 'See all active deliveries on a map & get nearby alerts.',
+          icon: Icons.location_on_rounded,
+          onTap: () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const MapViewScreen()));
           },
         ),
         const SizedBox(height: 16),
