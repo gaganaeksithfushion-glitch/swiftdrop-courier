@@ -1,0 +1,66 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
+    id "com.google.gms.google-services"
+}
+
+android {
+    // "lk.shiftdrop.courier" කියලා දාලා තියෙන්නේ - මේකම Firebase Console එකේ App Register කරද්දි
+    // Package Name එකට දාන්න. වෙනස් නමක් ඕන නම්, මෙතනත් Firebase එකේත් දෙකේම එකම නම දාන්න.
+    namespace "lk.shiftdrop.courier"
+    compileSdkVersion flutter.compileSdkVersion
+    ndkVersion flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    defaultConfig {
+        // Firebase Console එකේ Register කරන Package Name එකට Match වෙන්නම ඕන
+        applicationId "lk.shiftdrop.courier"
+        minSdkVersion flutter.minSdkVersion
+        targetSdkVersion flutter.targetSdkVersion
+        // pubspec.yaml එකේ "version: 1.0.0+1" එකෙන් Auto ගන්නවා - Play Store එකට Upload කරන
+        // හැම වතාවකදිම pubspec.yaml එකේ "+1" කොටස වඩන්න, versionCode Hardcode කරන්න එපා
+        versionCode flutter.versionCode
+        versionName flutter.versionName
+        // Firebase + Google Maps + තව Plugins එකතු වෙද්දි 64k Method Limit එකට යවෙන්න පුළුවන් -
+        // කලින්ම Multidex On කරගැනීම
+        multiDexEnabled true
+    }
+
+    signingConfigs {
+        release {
+            // ⚠️ TODO: Real Release Keystore එකක් හදලා, පහත Values Codemagic Secure Env Variables
+            // විදිහට (හෝ key.properties File එකකින්) මෙතනට දෙන්න. දැනට Debug Key එකෙන් Sign වුනොත්
+            // Google Play එකට Upload කරන්න බෑ.
+            storeFile file(System.getenv("RELEASE_KEYSTORE_PATH") ?: "debug.keystore")
+            storePassword System.getenv("RELEASE_STORE_PASSWORD") ?: ""
+            keyAlias System.getenv("RELEASE_KEY_ALIAS") ?: ""
+            keyPassword System.getenv("RELEASE_KEY_PASSWORD") ?: ""
+        }
+    }
+
+    buildTypes {
+        release {
+            // ⚠️ TODO: Real Keystore එක Setup කරගත්තට පස්සේ, මේක signingConfigs.release ලෙසම තියන්න.
+            // Setup වෙනකම් විතරයි Fallback එකක් විදිහට signingConfigs.debug පාවිච්චි කරන්නේ.
+            signingConfig signingConfigs.debug
+        }
+    }
+}
+
+flutter {
+    source '../..'
+}
+
+dependencies {
+    implementation platform('com.google.firebase:firebase-bom:33.7.0')
+    implementation 'com.google.firebase:firebase-firestore'
+}
