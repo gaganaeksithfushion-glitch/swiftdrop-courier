@@ -21,22 +21,26 @@ workflows:
         script: |
           # Flutter project එකට නැතිවුණු android ෆෝල්ඩරය නැවත සාදා ගැනීම
           # (android/app/build.gradle සහ AndroidManifest.xml දැනටමත් Repo එකේ තියෙන නිසා,
-          # flutter create ඒවාට අත ගාන්නේ නෑ - Missing Files (settings.gradle ඇතුළු) විතරයි හදන්නේ)
+          # flutter create ඒවාට අත ගාන්නේ නෑ - Missing Files විතරයි හදන්නේ)
           flutter create . --platforms=android
           flutter pub get
 
-          # settings.gradle එකේ "com.google.gms.google-services" Plugin එකේ Version එක
+          # settings.gradle.kts එකේ "com.google.gms.google-services" Plugin එකේ Version එක
           # flutter create එකෙන් Auto දෙන්නේ නෑ - ඒක නිසා අපිම මේ File එක සම්පූර්ණයෙන්ම
           # Correct Content එකකින් Overwrite කරනවා (Firebase Build Fail වීම වළක්වන්න)
-          cat > android/settings.gradle << 'EOF'
+          # (Note: අලුත් Flutter versions වල flutter create එකෙන් හදන්නේ settings.gradle.kts -
+          # Kotlin DSL - Groovy settings.gradle එක නෙවෙයි. දෙකම එකවර තිබ්බොත් Gradle
+          # "unsupported project" error එකක් දෙනවා, ඒක නිසා .kts එකම overwrite කරලා,
+          # පරණ Groovy file එක තියෙනවනම් delete කරනවා.)
+          cat > android/settings.gradle.kts << 'EOF'
           pluginManagement {
-              def flutterSdkPath = {
-                  def properties = new Properties()
-                  file("local.properties").withInputStream { properties.load(it) }
-                  def flutterSdkPath = properties.getProperty("flutter.sdk")
-                  assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
-                  return flutterSdkPath
-              }()
+              val flutterSdkPath = run {
+                  val properties = java.util.Properties()
+                  file("local.properties").inputStream().use { properties.load(it) }
+                  val flutterSdkPath = properties.getProperty("flutter.sdk")
+                  require(flutterSdkPath != null) { "flutter.sdk not set in local.properties" }
+                  flutterSdkPath
+              }
 
               includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
 
@@ -48,19 +52,26 @@ workflows:
           }
 
           plugins {
-              id "dev.flutter.flutter-plugin-loader" version "1.0.0"
-              id "com.android.application" version "8.3.0" apply false
-              id "org.jetbrains.kotlin.android" version "1.9.24" apply false
-              id "com.google.gms.google-services" version "4.4.2" apply false
+              id("dev.flutter.flutter-plugin-loader") version "1.0.0"
+              id("com.android.application") version "8.3.0" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+              id("com.google.gms.google-services") version "4.4.2" apply false
           }
 
-          include ":app"
+          include(":app")
           EOF
+
+          # පරණ Groovy settings.gradle එකක් repo එකේ ඉතුරු වෙලා තියෙනවනම්
+          # (duplicate/conflict වළක්වන්න) අයින් කරනවා
+          rm -f android/settings.gradle
 
           # Google Maps (Location Picker) එකට ඕන API Key එක, AndroidManifest.xml එකේ
           # Placeholder එක වෙනුවට Real Key එකෙන් Build Time එකේදී Replace කිරීම
           # (--dart-define එකෙන් Dart Code එකට විතරයි Key එක යන්නේ, Native Manifest එකට යන්නේ නෑ)
-          sed -i "s|GOOGLE_API_KEY_PLACEHOLDER|$GOOGLE_API_KEY|g" android/app/src/main/AndroidManifest.xml
+          # (Note: mac_mini_m2 instance එක macOS/BSD sed එකක් නිසා -i එකට empty backup
+          # suffix argument එකක් '' විදිහට දෙන්න ඕන - Linux GNU sed syntax එකෙන් fail වෙනවා)
+          sed -i '' "s|GOOGLE_API_KEY_PLACEHOLDER|$GOOGLE_API_KEY|g" android/app/src/main/AndroidManifest.xml
+
           # Firebase එකට ඕන google-services.json File එක - දැනටමත් Repo එකේ Commit කරලා තියෙනවා
           # නම් මේ Step එකට කිසි Harm එකක් නෑ (Skip වෙනවා විතරයි). GOOGLE_SERVICES_JSON Env
           # Variable එකක් Set කරලා තියෙනවා නම් විතරයි, ඒකෙන් File එක Overwrite කරන්නේ (Empty
