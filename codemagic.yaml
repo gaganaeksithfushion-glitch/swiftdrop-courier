@@ -74,12 +74,19 @@ workflows:
           rm -f android/build.gradle.kts
           rm -f android/app/build.gradle.kts
 
-          # ⚠️ flutter create එකෙන් Default Org Name එකේ ("com.example") MainActivity.kt
-          # එකක් හදනවා, ඒත් build.gradle එකේ Real Namespace/applicationId එක
-          # "lk.shiftdrop.courier". Package Mismatch එක නිසා Gradle එකට Correct
-          # Namespace එක ඇතුළේ v2 FlutterActivity එකක් හම්බ වෙන්නේ නෑ - ඒකෙන් "deleted
-          # Android v1 embedding" Error එක එනවා. ඒක නිසා Correct Namespace Path එකේම
-          # MainActivity.kt අලුතෙන් හදලා, වැරදි com.example Folder එක Delete කරනවා
+          # ⚠️ flutter create එකෙන් MainActivity.kt එකක් හදද්දී, Org Name එක auto-detect
+          # කරන්නේ build.gradle එකේ applicationId එකෙන් (Last Segment එක අයින් කරලා) -
+          # "lk.shiftdrop.courier" → Org "lk.shiftdrop", ඊට පස්සේ pubspec.yaml එකේ Project
+          # Name එකත් (swiftdrop_courier) එකතු කරලා "lk.shiftdrop.swiftdrop_courier" කියන
+          # VARIABLE (අනපේක්ෂිත) Package එකක MainActivity.kt එකක් හදනවා - ඒක Real
+          # applicationId එකට (lk.shiftdrop.courier) Match වෙන්නේ නෑ. මේ Auto-Detected
+          # Package Name එක Flutter Version අනුවත් වෙනස් වෙන්න පුළුවන් නිසා, "com" Folder
+          # එකක් විතරක් Delete කරනවා වෙනුවට, kotlin/ Source Folder එකම සම්පූර්ණයෙන්ම Wipe
+          # කරලා, Correct Namespace එකේ MainActivity.kt එකම අලුතෙන් හදනවා
+          echo "===== flutter create එකෙන් Auto-Generated kotlin/ Folder Structure ====="
+          find android/app/src/main/kotlin -type f
+          echo "==========================================================================="
+          rm -rf android/app/src/main/kotlin
           mkdir -p android/app/src/main/kotlin/lk/shiftdrop/courier
           cat > android/app/src/main/kotlin/lk/shiftdrop/courier/MainActivity.kt << 'EOF'
           package lk.shiftdrop.courier
@@ -88,7 +95,6 @@ workflows:
 
           class MainActivity : FlutterActivity()
           EOF
-          rm -rf android/app/src/main/kotlin/com
 
           # Google Maps (Location Picker) එකට ඕන API Key එක, AndroidManifest.xml එකේ
           # Placeholder එක වෙනුවට Real Key එකෙන් Build Time එකේදී Replace කිරීම
@@ -112,6 +118,20 @@ workflows:
           echo "===== AndroidManifest.xml CONTENT AT BUILD TIME ====="
           cat android/app/src/main/AndroidManifest.xml
           echo "======================================================="
+
+          echo "===== android/app/build.gradle (Kept, Groovy) CONTENT ====="
+          cat android/app/build.gradle
+          echo "============================================================="
+
+          # ⚠️ DIAGNOSTIC: Legacy buildSrc/FlutterPlugin.groovy File එකක් (ඉතාම පරණ
+          # Flutter Project Structure එකක ඉතුරු වූ එකක්) තියෙනවනම්, Flutter Tool එකට
+          # Gradle Plugin Version එක "Unsupported" කියලා සලකන්න පුළුවන් - ඒකෙන් "v1
+          # embedding" Error එකටත් හේතු වෙන්න පුළුවන්
+          if [ -f "android/buildSrc/src/main/groovy/FlutterPlugin.groovy" ]; then
+            echo "⚠️ WARNING: Legacy buildSrc/FlutterPlugin.groovy File එකක් හම්බ වුණා!"
+          else
+            echo "OK: Legacy buildSrc/FlutterPlugin.groovy File එකක් නෑ"
+          fi
 
           flutter build appbundle --release --verbose --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
           flutter build apk --release --verbose --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
