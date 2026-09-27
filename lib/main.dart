@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'app_theme.dart'; // අපි නිර්මාණය කළ තීම් ෆයිල් එක
 import 'login_screen.dart';
 import 'registration_screen.dart';
@@ -10,7 +11,10 @@ import 'end_of_day_report_screen.dart';
 import 'settings_screen.dart';
 import 'map_view_screen.dart';
 
-void main() {
+void main() async {
+  // Firebase එක App එක Start වෙනකොටම Initialize කරගැනීම (google-services.json එක මත පදනම්ව)
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   runApp(const ShiftDropApp());
 }
 
