@@ -10,11 +10,12 @@ workflows:
         # එකක් හදලා, GOOGLE_API_KEY කියලා Variable එකක් "Secure" ලෙස Mark කරලා Add කරන්න.
         # Key එක Codemagic UI එකේ Encrypted ලෙසයි Save වෙන්නේ, මේ file එකේ Plain Text එකෙන් නෑ.
         - google_api
-        # ⚠️ "firebase" කියලා තව Group එකක් හදලා, GOOGLE_SERVICES_JSON කියලා Variable එකක් "Secure"
-        # ලෙස Add කරන්න. Value එක විදිහට, ඔබේ google-services.json File එකේ Base64 Encoded
-        # Content එක දාන්න (Terminal එකේදී: base64 -i google-services.json | pbcopy [Mac] හෝ
-        # base64 -w 0 google-services.json [Linux/Windows Git Bash] කරලා Output එක Copy කරන්න).
-        - firebase
+        # Note: google-services.json එක දැනටමත් Git Repo එකට Direct Commit කරලා තියෙන නිසා,
+        # "firebase" කියලා Env Variable Group එකක් මෙතන අවශ්‍ය නෑ. පස්සේ Secure Injection
+        # (Repo එකෙන් File එක අයින් කරලා) එකට මාරු වෙන්න ඕන නම්, Codemagic UI එකේ "firebase"
+        # කියලා Group එකක් හදලා, GOOGLE_SERVICES_JSON කියලා Variable එකක් "Secure" ලෙස Add
+        # කරලා, පහත Line එකේ Comment එක අයින් කරන්න:
+        # - firebase
     scripts:
       - name: Create Android Native Files and Build
         script: |
