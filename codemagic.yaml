@@ -65,6 +65,15 @@ workflows:
           # (duplicate/conflict වළක්වන්න) අයින් කරනවා
           rm -f android/settings.gradle
 
+          # ⚠️ android/build.gradle සහ android/app/build.gradle (Groovy) දෙකම
+          # දැනටමත් Repo එකේ Commit කරලා තියෙන නිසා (Custom Firebase/Signing/
+          # applicationId Config එක්ක), flutter create එකෙන් අලුතෙන් හදපු
+          # build.gradle.kts (Kotlin DSL, Blank Template) Duplicate File දෙක
+          # අයින් කරනවා - නැත්නම් Gradle එකට Module එකකට Build File 2ක් (Groovy
+          # + Kotlin) පේනවා, ඒකෙන් "unsupported Gradle project" Error එක එනවා
+          rm -f android/build.gradle.kts
+          rm -f android/app/build.gradle.kts
+
           # Google Maps (Location Picker) එකට ඕන API Key එක, AndroidManifest.xml එකේ
           # Placeholder එක වෙනුවට Real Key එකෙන් Build Time එකේදී Replace කිරීම
           # (--dart-define එකෙන් Dart Code එකට විතරයි Key එක යන්නේ, Native Manifest එකට යන්නේ නෑ)
