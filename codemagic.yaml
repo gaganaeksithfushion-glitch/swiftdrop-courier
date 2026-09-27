@@ -10,16 +10,60 @@ workflows:
         # එකක් හදලා, GOOGLE_API_KEY කියලා Variable එකක් "Secure" ලෙස Mark කරලා Add කරන්න.
         # Key එක Codemagic UI එකේ Encrypted ලෙසයි Save වෙන්නේ, මේ file එකේ Plain Text එකෙන් නෑ.
         - google_api
+        # ⚠️ "firebase" කියලා තව Group එකක් හදලා, GOOGLE_SERVICES_JSON කියලා Variable එකක් "Secure"
+        # ලෙස Add කරන්න. Value එක විදිහට, ඔබේ google-services.json File එකේ Base64 Encoded
+        # Content එක දාන්න (Terminal එකේදී: base64 -i google-services.json | pbcopy [Mac] හෝ
+        # base64 -w 0 google-services.json [Linux/Windows Git Bash] කරලා Output එක Copy කරන්න).
+        - firebase
     scripts:
       - name: Create Android Native Files and Build
         script: |
           # Flutter project එකට නැතිවුණු android ෆෝල්ඩරය නැවත සාදා ගැනීම
+          # (android/app/build.gradle සහ AndroidManifest.xml දැනටමත් Repo එකේ තියෙන නිසා,
+          # flutter create ඒවාට අත ගාන්නේ නෑ - Missing Files (settings.gradle ඇතුළු) විතරයි හදන්නේ)
           flutter create . --platforms=android
           flutter pub get
+
+          # settings.gradle එකේ "com.google.gms.google-services" Plugin එකේ Version එක
+          # flutter create එකෙන් Auto දෙන්නේ නෑ - ඒක නිසා අපිම මේ File එක සම්පූර්ණයෙන්ම
+          # Correct Content එකකින් Overwrite කරනවා (Firebase Build Fail වීම වළක්වන්න)
+          cat > android/settings.gradle << 'EOF'
+          pluginManagement {
+              def flutterSdkPath = {
+                  def properties = new Properties()
+                  file("local.properties").withInputStream { properties.load(it) }
+                  def flutterSdkPath = properties.getProperty("flutter.sdk")
+                  assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
+                  return flutterSdkPath
+              }()
+
+              includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
+
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          plugins {
+              id "dev.flutter.flutter-plugin-loader" version "1.0.0"
+              id "com.android.application" version "8.3.0" apply false
+              id "org.jetbrains.kotlin.android" version "1.9.24" apply false
+              id "com.google.gms.google-services" version "4.4.2" apply false
+          }
+
+          include ":app"
+          EOF
+
           # Google Maps (Location Picker) එකට ඕන API Key එක, AndroidManifest.xml එකේ
           # Placeholder එක වෙනුවට Real Key එකෙන් Build Time එකේදී Replace කිරීම
           # (--dart-define එකෙන් Dart Code එකට විතරයි Key එක යන්නේ, Native Manifest එකට යන්නේ නෑ)
           sed -i "s|GOOGLE_API_KEY_PLACEHOLDER|$GOOGLE_API_KEY|g" android/app/src/main/AndroidManifest.xml
+          # Firebase එකට ඕන google-services.json File එක, Secure Env Variable එකෙන් Decode කරලා
+          # Correct තැනට (android/app/) Write කිරීම - "flutter create ." එකෙන් Wipe වෙන්නේ නෑ,
+          # මොකද මේක ඒ Command එකට පස්සේ තමයි Run වෙන්නේ
+          echo $GOOGLE_SERVICES_JSON | base64 --decode > android/app/google-services.json
           flutter build appbundle --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
           flutter build apk --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
     artifacts:
