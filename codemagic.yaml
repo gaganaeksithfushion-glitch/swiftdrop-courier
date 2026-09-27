@@ -60,10 +60,13 @@ workflows:
           # Placeholder එක වෙනුවට Real Key එකෙන් Build Time එකේදී Replace කිරීම
           # (--dart-define එකෙන් Dart Code එකට විතරයි Key එක යන්නේ, Native Manifest එකට යන්නේ නෑ)
           sed -i "s|GOOGLE_API_KEY_PLACEHOLDER|$GOOGLE_API_KEY|g" android/app/src/main/AndroidManifest.xml
-          # Firebase එකට ඕන google-services.json File එක, Secure Env Variable එකෙන් Decode කරලා
-          # Correct තැනට (android/app/) Write කිරීම - "flutter create ." එකෙන් Wipe වෙන්නේ නෑ,
-          # මොකද මේක ඒ Command එකට පස්සේ තමයි Run වෙන්නේ
-          echo $GOOGLE_SERVICES_JSON | base64 --decode > android/app/google-services.json
+          # Firebase එකට ඕන google-services.json File එක - දැනටමත් Repo එකේ Commit කරලා තියෙනවා
+          # නම් මේ Step එකට කිසි Harm එකක් නෑ (Skip වෙනවා විතරයි). GOOGLE_SERVICES_JSON Env
+          # Variable එකක් Set කරලා තියෙනවා නම් විතරයි, ඒකෙන් File එක Overwrite කරන්නේ (Empty
+          # File එකකින් Committed File එක අනතුරේ නොවෙන්න)
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo $GOOGLE_SERVICES_JSON | base64 --decode > android/app/google-services.json
+          fi
           flutter build appbundle --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
           flutter build apk --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
     artifacts:
