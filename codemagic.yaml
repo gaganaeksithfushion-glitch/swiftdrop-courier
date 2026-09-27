@@ -104,8 +104,17 @@ workflows:
           if [ -n "$GOOGLE_SERVICES_JSON" ]; then
             echo $GOOGLE_SERVICES_JSON | base64 --decode > android/app/google-services.json
           fi
-          flutter build appbundle --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
-          flutter build apk --release --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
+
+          # ⚠️ DIAGNOSTIC: Build Time එකේදී Actual AndroidManifest.xml Content එක Log
+          # එකට Print කරනවා - sed/Cache නිසා File එක Corrupt වෙලාද, flutterEmbedding=2
+          # තියෙනවද කියලා Confirm කරගන්න. Root Cause එක හම්බ වුනාට පස්සේ මේ කොටසත්,
+          # --verbose Flag එකත් අයින් කරන්න පුළුවන්.
+          echo "===== AndroidManifest.xml CONTENT AT BUILD TIME ====="
+          cat android/app/src/main/AndroidManifest.xml
+          echo "======================================================="
+
+          flutter build appbundle --release --verbose --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
+          flutter build apk --release --verbose --dart-define=GOOGLE_API_KEY=$GOOGLE_API_KEY
     artifacts:
       - build/app/outputs/**/*.aab
       - build/app/outputs/**/*.apk
