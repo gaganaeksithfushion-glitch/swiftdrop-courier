@@ -143,6 +143,17 @@ class DatabaseHelper {
     return await db.query('deliveries', orderBy: 'timestamp DESC');
   }
 
+  // 'delivered' / 'returned' / 'cancelled' නොවූ, තවම Active/Live තියෙන Deliveries ටික විතරක් ලබාගැනීම
+  // (Map/Proximity Screen එකට - අවසන් වුනු Parcel වලට Marker/Alert අවශ්‍ය නෑ)
+  Future<List<Map<String, dynamic>>> getActiveDeliveries() async {
+    final db = await instance.database;
+    return await db.query(
+      'deliveries',
+      where: "status NOT IN ('delivered', 'returned', 'cancelled')",
+      orderBy: 'timestamp DESC',
+    );
+  }
+
   Future<int> updateDeliveryStatus(int id, String status, int attempts) async {
     final db = await instance.database;
     return await db.update('deliveries', {'status': status, 'callAttempts': attempts}, where: 'id = ?', whereArgs: [id]);
