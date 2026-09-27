@@ -42,7 +42,7 @@ class _RouteListScreenState extends State<RouteListScreen> {
     final data = await dbHelper.getConfirmedDeliveries();
     if (!mounted) return;
     setState(() {
-      deliveries = data;
+      deliveries = List<Map<String, dynamic>>.from(data);
       _isLoading = false;
     });
   }
@@ -270,33 +270,37 @@ class _RouteListScreenState extends State<RouteListScreen> {
   }
 
   // User Drag කරලා Route එකේ Order එක Manual ලෙස වෙනස් කිරීම
-  // Date Filter එකක් Active නම්, Filtered List එකේ පෙන්නන Items ටිකේම Order එක වෙනස් කරලා,
-  // ඉතුරු (Filter වුනු) Items ටික ඒ විදිහටම තියාගෙන, සම්පූර්ණ List එක නැවත සකස් කරනවා
+  // Date Filter/Search එකක් Active නම්, Filtered (පේන) List එකේ Items ටිකේම Order එක වෙනස් කරලා,
+  // ඉතුරු (Filter වුනු, පේන්නේ නැති) Items ටික ඒ විදිහටම තියාගෙන, සම්පූර්ණ List එක නැවත සකස් කරනවා.
+  // (Bug Fix: කලින් Search Active උනාම විතරක් "deliveries" List එකම, Filtered List එකෙන් Overwrite වෙලා
+  // පේන්නේ නැති Items ටික සම්පූර්ණයෙන්ම Memory එකෙන් නැති වෙනවා. දැන් හැම වෙලාවෙම Safe Merge එකක් කරනවා.)
   Future<void> _onReorder(int oldIndex, int newIndex) async {
-    final visibleList = _filteredDeliveries;
-    setState(() {
-      if (newIndex > oldIndex) newIndex -= 1;
-      final movedItem = visibleList.removeAt(oldIndex);
-      visibleList.insert(newIndex, movedItem);
+    // Growable Copy එකක් හදාගන්නවා - Aliasing/Fixed-length List Issues වළක්වන්න
+    final visibleList = List<Map<String, dynamic>>.from(_filteredDeliveries);
+    if (newIndex > oldIndex) newIndex -= 1;
+    final movedItem = visibleList.removeAt(oldIndex);
+    visibleList.insert(newIndex, movedItem);
 
-      if (_selectedRange == null) {
-        deliveries = visibleList;
+    // සම්පූර්ණ (Unfiltered) List එකේ, පේන Items ටිකේ අලුත් පිළිවෙල Insert කරලා,
+    // ඉතුරු (Hidden) Items ටික ඒ Position එකේම තියාගෙන Merge කිරීම
+    final visibleIds = visibleList.map((d) => d['id']).toSet();
+    final fullList = List<Map<String, dynamic>>.from(deliveries);
+    final merged = <Map<String, dynamic>>[];
+    int visibleIndex = 0;
+    for (final d in fullList) {
+      if (visibleIds.contains(d['id'])) {
+        merged.add(visibleList[visibleIndex]);
+        visibleIndex++;
       } else {
-        final visibleIds = visibleList.map((d) => d['id']).toSet();
-        final merged = <Map<String, dynamic>>[];
-        int visibleIndex = 0;
-        for (final d in deliveries) {
-          if (visibleIds.contains(d['id'])) {
-            merged.add(visibleList[visibleIndex]);
-            visibleIndex++;
-          } else {
-            merged.add(d);
-          }
-        }
-        deliveries = merged;
+        merged.add(d);
       }
+    }
+
+    setState(() {
+      deliveries = merged;
     });
-    final orderedIds = deliveries.map((d) => d['id'] as int).toList();
+
+    final orderedIds = merged.map((d) => d['id'] as int).toList();
     await dbHelper.updateRouteOrder(orderedIds);
   }
 
